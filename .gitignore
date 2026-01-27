@@ -1,0 +1,19 @@
+# Build output
+/target
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Project specific
+IMPLEMENTATION_PLAN.md
