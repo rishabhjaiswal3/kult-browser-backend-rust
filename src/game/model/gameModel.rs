@@ -6,7 +6,7 @@ use super::gameImageModel::GameImages;
 
 // Main game entity
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Game {
+pub struct GameModel {
     // Essential
     #[serde(rename = "_id")]
     pub id: ObjectId,
