@@ -1,5 +1,10 @@
-pub mod gameModel;
-pub mod gameImageModel;
+pub mod game_image_model;
+pub mod game_model;
+pub mod localized_model;
+pub mod util;
 
-pub use gameModel::GameModel;
-pub use gameImageModel::{GameImages, ImageObject, OrientedImage, OrientedImageArray, IndexedImage};
+pub use game_image_model::{
+    GameImages, ImageObject, IndexedImage, OrientedImage, OrientedImageArray,
+};
+pub use game_model::GameModel;
+pub use localized_model::Localized;

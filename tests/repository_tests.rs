@@ -1,8 +1,9 @@
 use chrono::Utc;
-use kult_browser_backend_rust::game::model::gameImageModel::{
-    GameImages, ImageObject, IndexedImage, OrientedImage, OrientedImageArray,
+use kult_browser_backend_rust::game::model::{
+    game_image_model::{GameImages, ImageObject, IndexedImage, OrientedImage, OrientedImageArray},
+    util,
 };
-use kult_browser_backend_rust::game::repository::gameImageRepository::GameModelImageRepository;
+use kult_browser_backend_rust::game::repository::game_image_repository::GameModelImageRepository;
 use kult_browser_backend_rust::mongo::connection;
 use kult_browser_backend_rust::{GameModel, GameModelRepository};
 use mongodb::bson::doc;
@@ -24,12 +25,12 @@ async fn test_game_repository_lifecycle() {
     let new_game = GameModel {
         id: ObjectId::new(),
         identification: test_id.clone(),
-        name: "Test Game".to_string(),
+        name: util::create_localized("Test Game".to_string()),
         platform: "web".to_string(),
         url: "https://example.com/game".to_string(),
         images: GameImages::default(),
-        slogan: Some("A test game".to_string()),
-        about: Some("Description".to_string()),
+        slogan: Some(util::create_localized("A test game".to_string())),
+        about: Some(util::create_localized("Description".to_string())),
         category: Some("Action".to_string()),
         tags: Some(vec!["test".to_string(), "rust".to_string()]),
         rating: Some(4.5),
@@ -63,7 +64,10 @@ async fn test_game_repository_lifecycle() {
         .expect("Failed to find game");
     assert!(found_game.is_some());
     let found_game = found_game.unwrap();
-    assert_eq!(found_game.name, "Test Game");
+    assert_eq!(
+        found_game.name,
+        util::create_localized("Test Game".to_string())
+    );
 
     // 7. Test Patch
     println!("Testing Patch...");
@@ -75,18 +79,24 @@ async fn test_game_repository_lifecycle() {
         .await
         .expect("Patch failed");
     assert!(patched_game.is_some());
-    assert_eq!(patched_game.unwrap().name, "Patched Game Name");
+    assert_eq!(
+        patched_game.unwrap().name,
+        util::create_localized("Patched Game Name".to_string())
+    );
 
     // 8. Test Replace
     println!("Testing Replace...");
     let mut replacement_game = new_game.clone();
-    replacement_game.name = "Replaced Game".to_string();
+    replacement_game.name = util::create_localized("Replaced Game".to_string());
     let replaced_game = game_repo
         .replace(&test_id, &replacement_game)
         .await
         .expect("Replace failed");
     assert!(replaced_game.is_some());
-    assert_eq!(replaced_game.unwrap().name, "Replaced Game");
+    assert_eq!(
+        replaced_game.unwrap().name,
+        util::create_localized("Replaced Game".to_string())
+    );
 
     // 9. Test Image Repository - Update Hero
     println!("Testing Image Update (Hero)...");
@@ -97,8 +107,8 @@ async fn test_game_repository_lifecycle() {
         ..Default::default()
     };
     let hero_images = OrientedImage {
-        horizontal: test_image.clone(),
-        vertical: test_image.clone(),
+        horizontal: util::create_localized(test_image.clone()),
+        vertical: util::create_localized(test_image.clone()),
         ..Default::default()
     };
 
@@ -114,7 +124,15 @@ async fn test_game_repository_lifecycle() {
         .await
         .expect("Get images failed")
         .unwrap();
-    assert_eq!(loaded_images.hero.horizontal.url, "http://img.com/hero.jpg");
+    assert_eq!(
+        loaded_images.hero.horizontal,
+        util::create_localized(ImageObject {
+            url: "http://img.com/hero.jpg".to_string(),
+            width: Some(1920),
+            height: Some(1080),
+            ..Default::default()
+        })
+    );
 
     // 10. Test Image Repository - Carousel
     println!("Testing Image Update (Carousel)...");

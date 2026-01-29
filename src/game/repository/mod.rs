@@ -1,5 +1,5 @@
-pub mod gameImageRepository;
-pub mod gameRepository;
+pub mod game_image_repository;
+pub mod game_repository;
 
-pub use gameImageRepository::GameModelImageRepository;
-pub use gameRepository::GameModelRepository;
+pub use game_image_repository::GameModelImageRepository;
+pub use game_repository::GameModelRepository;

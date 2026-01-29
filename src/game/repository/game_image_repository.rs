@@ -5,10 +5,10 @@ use mongodb::{
     Collection, Database,
 };
 
-use crate::game::model::gameImageModel::{
+use crate::game::model::game_image_model::{
     GameImages, ImageObject, IndexedImage, OrientedImage, OrientedImageArray,
 };
-use crate::game::model::gameModel::GameModel;
+use crate::game::model::game_model::GameModel;
 
 pub struct GameModelImageRepository {
     collection: Collection<GameModel>,

@@ -3,6 +3,14 @@ name = "kult-browser-backend-rust"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "seed_games"
+path = "src/bin/seed_games.rs"
+
+[[bin]]
+name = "kult_browser_backend_rust"
+path = "src/main.rs"
+
 [dependencies]
 mongodb = "3.1"
 tokio = { version = "1", features = ["full"] }
@@ -12,3 +20,4 @@ serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 bson = { version = "2", features = ["chrono-0_4"] }
 futures = "0.3"
+axum = { version = "0.7", features = ["macros"] }

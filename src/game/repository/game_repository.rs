@@ -92,6 +92,30 @@ impl GameModelRepository {
             .await
     }
     // Delete a GameModel
+    pub async fn find_by_ids(
+        &self,
+        ids: Vec<String>,
+    ) -> Result<Vec<GameModel>, mongodb::error::Error> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Also support fetching by 'identification' slug if IDs fail?
+        // Actually, StoreLayout uses `identification` (slugs) as IDs usually.
+        // Let's assume input is SLUGS (identification) based on my previous plan.
+
+        let filter = doc! {
+            "identification": { "$in": ids }
+        };
+
+        let mut cursor = self.collection.find(filter).await?;
+        let mut games = Vec::new();
+        while let Some(game) = cursor.try_next().await? {
+            games.push(game);
+        }
+        Ok(games)
+    }
+
     pub async fn delete(&self, identification: &str) -> Result<bool, mongodb::error::Error> {
         let result = self
             .collection
