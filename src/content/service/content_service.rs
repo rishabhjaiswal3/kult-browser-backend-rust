@@ -1,4 +1,4 @@
-use crate::content::model::ContentResponse;
+use crate::content::model::{ContentResponse, FieldMapping};
 use crate::content::repository::ContentConfigRepository;
 use crate::game::repository::GameModelRepository;
 use serde_json::Value;
@@ -68,9 +68,9 @@ impl<'a> ContentService<'a> {
             if let Some(game) = games_map.remove(id) {
                 // Convert to Value
                 if let Ok(game_val) = serde_json::to_value(game) {
-                    // Apply projection if attributes exist
-                    let final_val = if let Some(ref attrs) = config.content_attributes {
-                        apply_projection(game_val, attrs)
+                    // Apply mapping if defined, otherwise return raw
+                    let final_val = if let Some(ref mappings) = config.field_mappings {
+                        apply_mapping(&game_val, mappings)
                     } else {
                         game_val
                     };
@@ -88,24 +88,30 @@ impl<'a> ContentService<'a> {
     }
 }
 
-fn apply_projection(source: Value, attributes: &[String]) -> Value {
-    if attributes.is_empty() {
-        return source;
-    }
-    // Deep projection could be complex. For now, we handle top-level keys.
-    // If a key contains dots (e.g. "images.hero"), we imply fetching the top level "images".
-    // A more advanced implementation would construct the nested object.
+fn apply_mapping(source: &Value, mappings: &[FieldMapping]) -> Value {
+    let mut mapped_obj = serde_json::Map::new();
 
-    if let Value::Object(map) = source {
-        let mut projected = serde_json::Map::new();
-        for attr in attributes {
-            let top_key = attr.split('.').next().unwrap();
-            if let Some(val) = map.get(top_key) {
-                projected.insert(top_key.to_string(), val.clone());
-            }
+    for mapping in mappings {
+        let path_parts: Vec<&str> = mapping.db_path.split('.').collect();
+        if let Some(val) = extract_value(source, &path_parts) {
+            mapped_obj.insert(mapping.response_key.clone(), val.clone());
         }
-        Value::Object(projected)
+    }
+
+    Value::Object(mapped_obj)
+}
+
+fn extract_value<'a>(source: &'a Value, path: &[&str]) -> Option<&'a Value> {
+    if path.is_empty() {
+        return Some(source);
+    }
+
+    let key = path[0];
+    let rest = &path[1..];
+
+    if let Some(val) = source.get(key) {
+        extract_value(val, rest)
     } else {
-        source // Cannot project non-object
+        None
     }
 }

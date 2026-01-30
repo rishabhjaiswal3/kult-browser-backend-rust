@@ -11,6 +11,18 @@ path = "src/bin/seed_games.rs"
 name = "kult_browser_backend_rust"
 path = "src/main.rs"
 
+[[bin]]
+name = "seed_leaderboard_config"
+path = "src/bin/seed_leaderboard_config.rs"
+
+[[bin]]
+name = "test_fetch_leaderboard"
+path = "src/bin/test_fetch_leaderboard.rs"
+
+[[bin]]
+name = "test_global_leaderboard"
+path = "src/bin/test_global_leaderboard.rs"
+
 [dependencies]
 mongodb = "3.1"
 tokio = { version = "1", features = ["full"] }

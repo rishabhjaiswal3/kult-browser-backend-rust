@@ -1,0 +1,4 @@
+pub mod game_leaderboard_config_repository;
+pub mod leaderboard_repository;
+pub use game_leaderboard_config_repository::GameLeaderboardConfigRepository;
+pub use leaderboard_repository::GlobalLeaderboardRepository;

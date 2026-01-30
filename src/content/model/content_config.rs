@@ -19,7 +19,13 @@ pub struct ContentConfig {
     pub content_order: Vec<String>, // List of IDs/Slugs
 
     #[serde(default)]
-    pub content_attributes: Option<Vec<String>>, // ["name", "slogan"] (Projection)
+    pub field_mappings: Option<Vec<FieldMapping>>, // Renaming and flattening
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FieldMapping {
+    pub response_key: String, // Output JSON key (e.g. "cover_image")
+    pub db_path: String,      // DB path (e.g. "images.hero.horizontal.en.url")
 }
 
 #[derive(Debug, Serialize)]

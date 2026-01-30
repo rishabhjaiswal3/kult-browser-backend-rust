@@ -1,5 +1,6 @@
 pub mod content;
 pub mod game;
+pub mod leaderboard;
 pub mod mongo;
 
 // Re-export at crate root
