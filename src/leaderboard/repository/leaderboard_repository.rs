@@ -1,5 +1,6 @@
 use crate::leaderboard::model::GlobalLeaderboardModel;
 use futures::stream::TryStreamExt;
+use mongodb::bson::doc;
 use mongodb::{Collection, Database};
 
 #[derive(Clone)]
@@ -51,5 +52,20 @@ impl GlobalLeaderboardRepository {
         }
 
         Ok(())
+    }
+
+    // Add this method to GlobalLeaderboardRepository impl block:
+
+    /// Get a single player's entry from the global leaderboard.
+    pub async fn get_player_entry(
+        &self,
+        wallet_address: &str,
+    ) -> Result<Option<GlobalLeaderboardModel>, String> {
+        let normalized = wallet_address.trim().to_lowercase();
+
+        self.collection
+            .find_one(doc! { "walletAddress": &normalized })
+            .await
+            .map_err(|e| format!("Failed to get player entry: {}", e))
     }
 }

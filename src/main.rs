@@ -1,5 +1,5 @@
 use axum::{
-    routing::{get, post},
+    routing::{get, patch, post},
     Router,
 };
 use kult_browser_backend_rust::{
@@ -18,6 +18,10 @@ use kult_browser_backend_rust::{
         service::{GameLeaderboardService, GlobalLeaderboardService},
     },
     mongo::connection,
+    player::{
+        controller::{get_profile, login, update_name, PlayerState},
+        PlayerRepository, PlayerService,
+    },
 };
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -40,8 +44,15 @@ async fn main() {
 
     // Services (Owned)
     let game_lb_service = GameLeaderboardService::new(lb_config_repo.clone(), client.clone());
-    let global_lb_service =
-        GlobalLeaderboardService::new(lb_config_repo, lb_global_repo, game_lb_service.clone());
+    let global_lb_service = GlobalLeaderboardService::new(
+        lb_config_repo,
+        lb_global_repo.clone(),
+        game_lb_service.clone(),
+    );
+
+    // Player Initialization
+    let player_repo = PlayerRepository::new(&db);
+    let player_service = PlayerService::new(player_repo, lb_global_repo, game_lb_service.clone());
 
     let content_state = ContentState {
         config_repo: content_config_repo.clone(),
@@ -53,13 +64,12 @@ async fn main() {
         global_service: global_lb_service,
     };
 
+    let player_state = PlayerState { player_service };
+
     let app = Router::new()
         .route("/api/content", get(get_content))
         .with_state(content_state)
-        // Leaderboard Routes (Mixed state is tricky in Axum without FromRef or merging routers)
-        // Best approach: Merge routers or use different state for different routes.
-        // Or make a generic AppState.
-        // For now, I will create a nested router for leaderboards with its own state.
+        // Leaderboard Routes
         .nest(
             "/api/leaderboards",
             Router::new()
@@ -67,6 +77,15 @@ async fn main() {
                 .route("/global", get(get_global_leaderboard))
                 .route("/global/refresh", post(refresh_global_leaderboard))
                 .with_state(leaderboard_state),
+        )
+        // Player Routes
+        .nest(
+            "/api/player",
+            Router::new()
+                .route("/login", post(login))
+                .route("/profile", get(get_profile))
+                .route("/name", patch(update_name))
+                .with_state(player_state),
         );
 
     println!("Server running on port 3000");

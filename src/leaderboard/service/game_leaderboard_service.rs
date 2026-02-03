@@ -94,4 +94,72 @@ impl GameLeaderboardService {
 
         Ok(entries)
     }
+
+    // Add this method to GameLeaderboardService impl block:
+
+    /// Fetch all game scores for a specific player.
+    ///
+    /// Returns: Vec<(identification, score, weight, weighted_score, rank)>
+    pub async fn fetch_scores_for_player(
+        &self,
+        wallet_address: &str,
+    ) -> Result<Vec<(String, f64, f64, f64, Option<u32>)>, String> {
+        let configs = self
+            .config_repo
+            .find_all()
+            .await
+            .map_err(|e| format!("Failed to fetch configs: {}", e))?;
+        let wallet = wallet_address.trim().to_lowercase();
+
+        let mut results = Vec::new();
+
+        for config in configs {
+            // Build aggregation pipeline to get this player's score + rank
+            let db = self.client.database(&config.db);
+            let coll = db.collection::<Document>(&config.collection);
+
+            let pipeline = vec![
+                doc! {
+                    "$project": {
+                        "person": format!("${}", config.person_key),
+                        "score": format!("${}", config.score_key),
+                    }
+                },
+                doc! {
+                    "$addFields": {
+                        "personLc": { "$toLower": "$person" }
+                    }
+                },
+                doc! {
+                    "$setWindowFields": {
+                        "sortBy": { "score": config.order },
+                        "output": { "rank": { "$documentNumber": {} } }
+                    }
+                },
+                doc! { "$match": { "personLc": &wallet } },
+                doc! { "$limit": 1 },
+            ];
+
+            if let Ok(cursor) = coll.aggregate(pipeline).await {
+                if let Ok(docs) = cursor.try_collect::<Vec<Document>>().await {
+                    if let Some(doc) = docs.first() {
+                        let score = doc.get_f64("score").unwrap_or(0.0);
+                        let rank = doc.get_i32("rank").ok().map(|r| r as u32);
+                        let weight = config.weight;
+                        let weighted = score * weight;
+
+                        results.push((
+                            config.identification.clone(),
+                            score,
+                            weight,
+                            weighted,
+                            rank,
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(results)
+    }
 }

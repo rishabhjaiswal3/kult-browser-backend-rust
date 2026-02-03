@@ -1,0 +1,34 @@
+// src/player/model/player_model.rs
+
+use mongodb::bson::oid::ObjectId;
+use serde::{Deserialize, Serialize};
+
+/// Core player identity stored in MongoDB.
+/// Collection: `store_players`
+///
+/// Note: Timestamp fields use skip_deserializing to handle legacy data
+/// that may have RFC 3339 strings instead of BSON DateTime.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerModel {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+
+    /// Unique identifier - Ethereum wallet address (lowercase, trimmed)
+    #[serde(rename = "walletAddress")]
+    pub wallet_address: String,
+
+    /// Display name (user-editable)
+    pub name: String,
+
+    /// Arbitrary metadata (e.g., avatar URL, preferences)
+    /// Using Option<Document> for flexibility - can store any BSON
+    #[serde(default)]
+    pub metadata: Option<mongodb::bson::Document>,
+
+    /// Timestamps are skipped during deserialization to handle mixed formats
+    #[serde(rename = "createdAt", default, skip_deserializing)]
+    pub created_at: Option<mongodb::bson::DateTime>,
+
+    #[serde(rename = "updatedAt", default, skip_deserializing)]
+    pub updated_at: Option<mongodb::bson::DateTime>,
+}
