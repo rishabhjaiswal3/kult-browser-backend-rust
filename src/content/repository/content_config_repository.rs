@@ -1,4 +1,5 @@
 use crate::content::model::ContentConfig;
+use crate::handler::AppError;
 use mongodb::{Collection, Database};
 
 pub struct ContentConfigRepository {
@@ -11,16 +12,21 @@ impl ContentConfigRepository {
         Self { collection }
     }
 
-    pub async fn find_config(&self, page: &str, section: &str) -> Option<ContentConfig> {
+    /// Find a content config by page and section.
+    pub async fn find_config(&self, page: &str, section: &str) -> Result<ContentConfig, AppError> {
         self.collection
             .find_one(mongodb::bson::doc! { "page": page, "section": section })
             .await
-            .ok()
-            .flatten()
+            .map_err(|e| AppError::Internal(format!("Database error: {}", e)))?
+            .ok_or_else(|| {
+                AppError::NotFound(format!(
+                    "Section '{}' not found on page '{}'",
+                    section, page
+                ))
+            })
     }
 
-    // Admin support
-    pub async fn upsert(&self, config: &ContentConfig) -> mongodb::error::Result<()> {
+    pub async fn upsert(&self, config: &ContentConfig) -> Result<(), AppError> {
         let options = mongodb::options::FindOneAndReplaceOptions::builder()
             .upsert(true)
             .build();
@@ -31,7 +37,8 @@ impl ContentConfigRepository {
                 config,
             )
             .with_options(options)
-            .await?;
+            .await
+            .map_err(|e| AppError::Internal(format!("Database error: {}", e)))?;
 
         Ok(())
     }

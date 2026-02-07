@@ -5,6 +5,7 @@ use std::env;
 
 use crate::GameModel;
 
+#[derive(Clone)]
 pub struct GameModelRepository {
     collection: Collection<GameModel>,
 }
@@ -138,5 +139,76 @@ impl GameModelRepository {
             }
         }
         Ok(game_models)
+    }
+
+    /// Find all games with optional text search and pagination.
+    /// Returns (games, total_count) tuple.
+    pub async fn find_all_paginated(
+        &self,
+        search: Option<&str>,
+        skip: i64,
+        limit: i64,
+    ) -> Result<(Vec<GameModel>, u64), mongodb::error::Error> {
+        use mongodb::options::FindOptions;
+
+        // Build filter based on search
+        let filter = match search {
+            Some(query) if !query.trim().is_empty() => {
+                // Escape regex special chars manually to avoid regex crate dependency
+                let escaped: String = query
+                    .trim()
+                    .chars()
+                    .flat_map(|c| {
+                        if "\\^$.|?*+()[]{}".contains(c) {
+                            vec!['\\', c]
+                        } else {
+                            vec![c]
+                        }
+                    })
+                    .collect();
+                let pattern = format!("(?i){}", escaped);
+                doc! {
+                    "$or": [
+                        { "identification": { "$regex": &pattern } },
+                        { "name.en": { "$regex": &pattern } },
+                        { "name.default": { "$regex": &pattern } },
+                        { "category": { "$regex": &pattern } },
+                        { "tags": { "$regex": &pattern } }
+                    ]
+                }
+            }
+            _ => doc! {},
+        };
+
+        // Get total count first
+        let total_count = self.collection.count_documents(filter.clone()).await?;
+
+        // Fetch paginated results
+        let options = FindOptions::builder()
+            .skip(skip as u64)
+            .limit(limit)
+            .sort(doc! { "identification": 1 })
+            .build();
+
+        let mut cursor = self.collection.find(filter).with_options(options).await?;
+        let mut games = Vec::new();
+        while let Some(game) = cursor.try_next().await? {
+            games.push(game);
+        }
+
+        Ok((games, total_count))
+    }
+
+    /// Get all distinct categories from games.
+    pub async fn get_distinct_categories(&self) -> Result<Vec<String>, mongodb::error::Error> {
+        let categories: Vec<String> = self
+            .collection
+            .distinct("category", doc! { "category": { "$ne": null } })
+            .await?
+            .into_iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect();
+
+        Ok(categories)
     }
 }

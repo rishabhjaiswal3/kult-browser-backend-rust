@@ -19,7 +19,6 @@ pub struct LoginRequest {
 /// POST /api/player/login - Response body
 #[derive(Debug, Serialize)]
 pub struct LoginResponse {
-    pub ok: bool,
     pub token: String,
     pub player: PlayerInfo,
 }
@@ -28,9 +27,9 @@ pub struct LoginResponse {
 #[derive(Debug, Serialize)]
 pub struct PlayerInfo {
     pub id: String,
-    
+
     #[serde(rename = "walletAddress")]
     pub wallet_address: String,
-    
+
     pub name: String,
 }

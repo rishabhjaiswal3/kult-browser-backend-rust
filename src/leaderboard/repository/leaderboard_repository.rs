@@ -68,4 +68,9 @@ impl GlobalLeaderboardRepository {
             .await
             .map_err(|e| format!("Failed to get player entry: {}", e))
     }
+
+    /// Get total count of entries in global leaderboard.
+    pub async fn count_all(&self) -> mongodb::error::Result<u64> {
+        self.collection.count_documents(doc! {}).await
+    }
 }

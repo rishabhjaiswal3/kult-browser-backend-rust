@@ -1,45 +1,55 @@
-use crate::leaderboard::{controller::LeaderboardState, model::GlobalLeaderboardModel};
-use axum::{
-    extract::{Query, State},
-    Json,
-};
+use crate::handler::{ApiResponse, AppError};
+use crate::leaderboard::controller::LeaderboardState;
+use axum::extract::{Query, State};
+use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct GlobalLeaderboardParams {
-    #[serde(default = "default_skip")]
-    pub skip: u64,
-    #[serde(default = "default_limit")]
-    pub limit: i64,
+    #[serde(default = "default_page")]
+    pub page: u32,
+    #[serde(default = "default_page_size")]
+    pub page_size: u32,
 }
 
-fn default_skip() -> u64 {
-    0
+fn default_page() -> u32 {
+    1
 }
-
-fn default_limit() -> i64 {
+fn default_page_size() -> u32 {
     50
 }
 
+/// GET /api/leaderboard/global
 pub async fn get_global_leaderboard(
     State(state): State<LeaderboardState>,
-    Query(params): Query<GlobalLeaderboardParams>,
-) -> Result<Json<Vec<GlobalLeaderboardModel>>, String> {
+    query: Result<Query<GlobalLeaderboardParams>, axum::extract::rejection::QueryRejection>,
+) -> Response {
+    let Query(params) = match query {
+        Ok(q) => q,
+        Err(rejection) => return AppError::BadRequest(rejection.body_text()).into_response(),
+    };
+
+    let page = params.page.max(1);
+    let page_size = params.page_size.min(100);
+
     match state
         .global_service
-        .get_global_leaderboard(params.skip, params.limit)
+        .get_global_leaderboard_paginated(page, page_size)
         .await
     {
-        Ok(entries) => Ok(Json(entries)),
-        Err(e) => Err(e),
+        Ok(data) => ApiResponse::success(data).into_response(),
+        Err(e) => e.into_response(),
     }
 }
 
-pub async fn refresh_global_leaderboard(
-    State(state): State<LeaderboardState>,
-) -> Result<String, String> {
+/// POST /api/leaderboard/refresh
+pub async fn refresh_global_leaderboard(State(state): State<LeaderboardState>) -> Response {
     match state.global_service.refresh_global_leaderboard().await {
-        Ok(count) => Ok(format!("Refreshed {} entries.", count)),
-        Err(e) => Err(e),
+        Ok(count) => ApiResponse::success(serde_json::json!({
+            "refreshed": count,
+            "message": format!("Refreshed {} entries", count)
+        }))
+        .into_response(),
+        Err(e) => e.into_response(),
     }
 }

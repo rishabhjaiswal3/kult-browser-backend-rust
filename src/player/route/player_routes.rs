@@ -1,0 +1,35 @@
+use axum::{
+    routing::{get, patch, post},
+    Router,
+};
+use mongodb::{Client, Database};
+
+use crate::leaderboard::repository::{
+    GameLeaderboardConfigRepository, GlobalLeaderboardRepository,
+};
+use crate::leaderboard::service::GameLeaderboardService;
+use crate::player::controller::{get_profile, login, update_name, PlayerState};
+use crate::player::repository::PlayerRepository;
+use crate::player::service::PlayerService;
+
+/// Build routes for the player module.
+///
+/// Routes:
+/// - POST /login - Login or register a player
+/// - GET /profile - Get player profile (auth required)
+/// - PATCH /name - Update player name (auth required)
+pub fn routes(db: Database, client: Client) -> Router {
+    let player_repo = PlayerRepository::new(&db);
+    let global_lb_repo = GlobalLeaderboardRepository::new(&db);
+    let config_repo = GameLeaderboardConfigRepository::new(&db);
+    let game_lb_service = GameLeaderboardService::new(config_repo, client);
+
+    let player_service = PlayerService::new(player_repo, global_lb_repo, game_lb_service);
+    let state = PlayerState { player_service };
+
+    Router::new()
+        .route("/login", post(login))
+        .route("/profile", get(get_profile))
+        .route("/name", patch(update_name))
+        .with_state(state)
+}

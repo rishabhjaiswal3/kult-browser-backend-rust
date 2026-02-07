@@ -5,7 +5,6 @@ use serde::Serialize;
 /// GET /api/player/profile - Full response
 #[derive(Debug, Clone, Serialize)]
 pub struct PlayerProfileResponse {
-    pub ok: bool,
     pub cached: bool,
     pub profile: PlayerProfile,
 }

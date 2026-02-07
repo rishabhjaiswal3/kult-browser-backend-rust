@@ -11,6 +11,5 @@ pub struct UpdateNameRequest {
 /// PATCH /api/player/name - Response body
 #[derive(Debug, Serialize)]
 pub struct UpdateNameResponse {
-    pub ok: bool,
     pub name: String,
 }

@@ -1,6 +1,7 @@
 use crate::content::model::{ContentResponse, FieldMapping};
 use crate::content::repository::ContentConfigRepository;
 use crate::game::repository::GameModelRepository;
+use crate::handler::AppError;
 use serde_json::Value;
 
 pub struct ContentService<'a> {
@@ -25,13 +26,9 @@ impl<'a> ContentService<'a> {
         section: &str,
         page_num: u32,
         page_size: u32,
-    ) -> Result<ContentResponse, String> {
-        // 1. Fetch Config
-        let config = self
-            .config_repo
-            .find_config(page, section)
-            .await
-            .ok_or_else(|| "Section not found".to_string())?;
+    ) -> Result<ContentResponse, AppError> {
+        // 1. Fetch Config (returns NotFound or Internal error)
+        let config = self.config_repo.find_config(page, section).await?;
 
         let total_count = config.content_order.len() as u32;
 
@@ -54,7 +51,7 @@ impl<'a> ContentService<'a> {
             .game_repo
             .find_by_ids(target_ids.to_vec())
             .await
-            .unwrap_or_default();
+            .map_err(|e| AppError::Internal(format!("Failed to fetch games: {}", e)))?;
 
         // Custom sort to match target_ids order
         let mut games_map: std::collections::HashMap<String, crate::game::model::GameModel> =

@@ -1,4 +1,4 @@
-// will this file be required on all folder levels if i have multiple
-
-// do i need to write this line for every file i am having
 pub mod connection;
+
+// Re-export connect at module level for cleaner API: mongo::connect()
+pub use connection::connect;

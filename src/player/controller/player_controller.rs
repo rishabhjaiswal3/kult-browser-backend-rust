@@ -1,9 +1,10 @@
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
-use serde_json::json;
-
+use crate::handler::{ApiResponse, AppError};
 use crate::middleware::AuthPlayer;
 use crate::player::dto::{LoginRequest, UpdateNameRequest};
 use crate::player::PlayerService;
+use axum::extract::State;
+use axum::response::{IntoResponse, Response};
+use axum::Json;
 
 /// Shared state for player endpoints
 #[derive(Clone)]
@@ -12,54 +13,46 @@ pub struct PlayerState {
 }
 
 /// POST /api/player/login
-///
-/// Login or register a player with their wallet address.
-/// No authentication required.
 pub async fn login(
     State(state): State<PlayerState>,
-    Json(payload): Json<LoginRequest>,
-) -> impl IntoResponse {
-    match state.player_service.login(payload).await {
-        Ok(response) => (StatusCode::OK, Json(json!(response))),
-        Err(e) => (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "ok": false, "error": e })),
-        ),
+    payload: Result<Json<LoginRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Json(request) = match payload {
+        Ok(p) => p,
+        Err(rejection) => return AppError::BadRequest(rejection.body_text()).into_response(),
+    };
+
+    match state.player_service.login(request).await {
+        Ok(data) => ApiResponse::success(data).into_response(),
+        Err(e) => e.into_response(),
     }
 }
 
 /// GET /api/player/profile
-///
-/// Get the authenticated player's profile with aggregated stats.
-/// Requires JWT authentication.
-pub async fn get_profile(State(state): State<PlayerState>, auth: AuthPlayer) -> impl IntoResponse {
+pub async fn get_profile(State(state): State<PlayerState>, auth: AuthPlayer) -> Response {
     match state.player_service.get_profile(&auth.wallet_address).await {
-        Ok(response) => (StatusCode::OK, Json(json!(response))),
-        Err(e) => (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "ok": false, "error": e })),
-        ),
+        Ok(data) => ApiResponse::success(data).into_response(),
+        Err(e) => e.into_response(),
     }
 }
 
 /// PATCH /api/player/name
-///
-/// Update the authenticated player's display name.
-/// Requires JWT authentication.
 pub async fn update_name(
     State(state): State<PlayerState>,
     auth: AuthPlayer,
-    Json(payload): Json<UpdateNameRequest>,
-) -> impl IntoResponse {
+    payload: Result<Json<UpdateNameRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Json(request) = match payload {
+        Ok(p) => p,
+        Err(rejection) => return AppError::BadRequest(rejection.body_text()).into_response(),
+    };
+
     match state
         .player_service
-        .update_name(&auth.wallet_address, payload)
+        .update_name(&auth.wallet_address, request)
         .await
     {
-        Ok(response) => (StatusCode::OK, Json(json!(response))),
-        Err(e) => (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "ok": false, "error": e })),
-        ),
+        Ok(data) => ApiResponse::success(data).into_response(),
+        Err(e) => e.into_response(),
     }
 }

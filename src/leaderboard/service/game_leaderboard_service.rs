@@ -1,3 +1,5 @@
+use crate::handler::AppError;
+use crate::leaderboard::dto::{GameLeaderboardEntryDto, GameLeaderboardResponse};
 use crate::leaderboard::model::LeaderboardEntry;
 use crate::leaderboard::repository::GameLeaderboardConfigRepository;
 use futures::stream::TryStreamExt;
@@ -18,6 +20,94 @@ impl GameLeaderboardService {
         }
     }
 
+    /// Fetch game leaderboard with pagination metadata.
+    pub async fn fetch_leaderboard_paginated(
+        &self,
+        identification: &str,
+        page: u32,
+        page_size: u32,
+    ) -> Result<GameLeaderboardResponse, AppError> {
+        let skip = (page.saturating_sub(1)) * page_size;
+
+        let config = self
+            .config_repo
+            .find_by_identification(identification)
+            .await
+            .ok_or_else(|| {
+                AppError::NotFound(format!(
+                    "Leaderboard config not found for '{}'",
+                    identification
+                ))
+            })?;
+
+        let db = self.client.database(&config.db);
+        let collection = db.collection::<Document>(&config.collection);
+
+        let total_count = collection
+            .count_documents(doc! {})
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to count documents: {}", e)))?;
+
+        let sort_order = config.order;
+
+        let pipeline = vec![
+            doc! {
+                "$project": {
+                    "player": format!("${}", config.person_key),
+                    "score": format!("${}", config.score_key),
+                }
+            },
+            doc! { "$sort": { "score": sort_order } },
+            doc! { "$skip": skip as i64 },
+            doc! { "$limit": page_size as i64 },
+        ];
+
+        let mut cursor = collection
+            .aggregate(pipeline)
+            .await
+            .map_err(|e| AppError::Internal(format!("Aggregation failed: {}", e)))?;
+
+        let mut entries = Vec::new();
+        let mut rank = skip + 1;
+
+        while let Some(doc) = cursor
+            .try_next()
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?
+        {
+            let player = doc.get_str("player").unwrap_or("unknown").to_string();
+            let score = doc
+                .get_f64("score")
+                .or_else(|_| doc.get_i64("score").map(|s| s as f64))
+                .or_else(|_| doc.get_i32("score").map(|s| s as f64))
+                .unwrap_or(0.0);
+
+            entries.push(GameLeaderboardEntryDto {
+                rank,
+                player,
+                score,
+                level: None,
+                metadata: None,
+            });
+            rank += 1;
+        }
+
+        let total_pages = if total_count == 0 {
+            0
+        } else {
+            ((total_count as f64) / (page_size as f64)).ceil() as u32
+        };
+
+        Ok(GameLeaderboardResponse {
+            entries,
+            total_count,
+            page,
+            page_size,
+            total_pages,
+        })
+    }
+
+    /// Legacy method for internal use (returns raw entries).
     pub async fn fetch_leaderboard(
         &self,
         identification: &str,
@@ -33,28 +123,16 @@ impl GameLeaderboardService {
         let db = self.client.database(&config.db);
         let collection = db.collection::<Document>(&config.collection);
 
-        // Build Pipeline
         let sort_order = config.order;
 
-        // Dynamic Projection and Sorting
-        // $project: { "player": "$walletAddress", "score": "$stats.total" } is not strictly needed
-        // if we just fetch and map in Rust, but doing it in Mongo is cleaner for sorting if keys are deep.
-
         let pipeline = vec![
-            // 1. Project standardized fields so we can sort/filter consistently
             doc! {
                 "$project": {
                     "player": format!("${}", config.person_key),
                     "score": format!("${}", config.score_key),
-                    // Preserve original document for metadata extraction if needed
-                    // "original": "$$ROOT"
                 }
             },
-            // 2. Sort by standardized score
-            doc! {
-                "$sort": { "score": sort_order }
-            },
-            // 3. Pagination
+            doc! { "$sort": { "score": sort_order } },
             doc! { "$skip": skip as i64 },
             doc! { "$limit": limit as i64 },
         ];
@@ -63,24 +141,16 @@ impl GameLeaderboardService {
             .aggregate(pipeline)
             .await
             .map_err(|e| e.to_string())?;
-
         let mut entries = Vec::new();
         let mut rank = skip + 1;
 
         while let Some(doc) = cursor.try_next().await.map_err(|e| e.to_string())? {
-            // Extract fields safely
             let player = doc.get_str("player").unwrap_or("unknown").to_string();
-
-            // Score might be int or double
-            let score = if let Ok(s) = doc.get_f64("score") {
-                s
-            } else if let Ok(s) = doc.get_i64("score") {
-                s as f64
-            } else if let Ok(s) = doc.get_i32("score") {
-                s as f64
-            } else {
-                0.0
-            };
+            let score = doc
+                .get_f64("score")
+                .or_else(|_| doc.get_i64("score").map(|s| s as f64))
+                .or_else(|_| doc.get_i32("score").map(|s| s as f64))
+                .unwrap_or(0.0);
 
             entries.push(LeaderboardEntry {
                 rank,
@@ -95,11 +165,7 @@ impl GameLeaderboardService {
         Ok(entries)
     }
 
-    // Add this method to GameLeaderboardService impl block:
-
     /// Fetch all game scores for a specific player.
-    ///
-    /// Returns: Vec<(identification, score, weight, weighted_score, rank)>
     pub async fn fetch_scores_for_player(
         &self,
         wallet_address: &str,
@@ -114,7 +180,6 @@ impl GameLeaderboardService {
         let mut results = Vec::new();
 
         for config in configs {
-            // Build aggregation pipeline to get this player's score + rank
             let db = self.client.database(&config.db);
             let coll = db.collection::<Document>(&config.collection);
 
@@ -125,11 +190,7 @@ impl GameLeaderboardService {
                         "score": format!("${}", config.score_key),
                     }
                 },
-                doc! {
-                    "$addFields": {
-                        "personLc": { "$toLower": "$person" }
-                    }
-                },
+                doc! { "$addFields": { "personLc": { "$toLower": "$person" } } },
                 doc! {
                     "$setWindowFields": {
                         "sortBy": { "score": config.order },

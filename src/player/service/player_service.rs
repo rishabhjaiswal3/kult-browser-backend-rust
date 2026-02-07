@@ -1,3 +1,4 @@
+use crate::handler::AppError;
 use crate::leaderboard::repository::GlobalLeaderboardRepository;
 use crate::leaderboard::service::GameLeaderboardService;
 use crate::middleware::AuthService;
@@ -29,25 +30,15 @@ impl PlayerService {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // LOGIN
-    // ─────────────────────────────────────────────────────────────────────
-
     /// Handle player login (find or create).
-    ///
-    /// # Arguments
-    /// * `request` - Login request with wallet address and optional name/metadata
-    ///
-    /// # Returns
-    /// * LoginResponse with JWT token and player info
-    pub async fn login(&self, request: LoginRequest) -> Result<LoginResponse, String> {
-        // Validate wallet address
+    pub async fn login(&self, request: LoginRequest) -> Result<LoginResponse, AppError> {
         let wallet = request.wallet_address.trim().to_lowercase();
         if wallet.is_empty() {
-            return Err("walletAddress is required".to_string());
+            return Err(AppError::BadRequest(
+                "walletAddress is required".to_string(),
+            ));
         }
 
-        // Generate default name if not provided
         let name = request.name.unwrap_or_else(|| {
             let suffix = format!("{:x}", chrono::Utc::now().timestamp_millis())
                 .chars()
@@ -57,22 +48,19 @@ impl PlayerService {
             format!("kult-player_{}", suffix)
         });
 
-        // Convert metadata if provided
         let metadata: Option<Document> = request
             .metadata
             .and_then(|v| mongodb::bson::to_document(&v).ok());
 
-        // Find or create player
         let (player, _is_new) = self
             .player_repo
             .find_or_create(&wallet, &name, metadata)
-            .await?;
+            .await
+            .map_err(|e| AppError::Internal(e))?;
 
-        // Sign JWT token
-        let token = AuthService::sign_token(&player)?;
+        let token = AuthService::sign_token(&player).map_err(|e| AppError::Internal(e))?;
 
         Ok(LoginResponse {
-            ok: true,
             token,
             player: PlayerInfo {
                 id: player.id.map(|oid| oid.to_hex()).unwrap_or_default(),
@@ -82,36 +70,31 @@ impl PlayerService {
         })
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // PROFILE
-    // ─────────────────────────────────────────────────────────────────────
-
     /// Get a player's full profile with aggregated stats.
-    ///
-    /// # Arguments
-    /// * `wallet_address` - The player's wallet address
-    ///
-    /// # Returns
-    /// * PlayerProfileResponse with aggregated data
-    pub async fn get_profile(&self, wallet_address: &str) -> Result<PlayerProfileResponse, String> {
+    pub async fn get_profile(
+        &self,
+        wallet_address: &str,
+    ) -> Result<PlayerProfileResponse, AppError> {
         let wallet = wallet_address.trim().to_lowercase();
 
-        // 1. Get player document (for username)
         let player = self
             .player_repo
             .find_by_wallet(&wallet)
-            .await?
-            .ok_or("Player not found")?;
+            .await
+            .map_err(|e| AppError::Internal(e))?
+            .ok_or_else(|| AppError::NotFound("Player not found".to_string()))?;
 
-        // 2. Get global leaderboard entry (for rank, level, total score)
-        let global_entry = self.global_lb_repo.get_player_entry(&wallet).await?;
+        let global_entry = self
+            .global_lb_repo
+            .get_player_entry(&wallet)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
         let (rank, total_score, level) = match global_entry {
             Some(entry) => (Some(entry.rank), entry.score, entry.level),
-            None => (None, 0.0, 1), // Unranked player
+            None => (None, 0.0, 1),
         };
 
-        // 3. Get per-game scores
         let game_scores = self
             .game_lb_service
             .fetch_scores_for_player(&wallet)
@@ -136,53 +119,41 @@ impl PlayerService {
             total_score,
             level,
             total_games_played: game_scores_list.len() as u32,
-            completed_quests: 0, // Placeholder for future
+            completed_quests: 0,
             game_scores_list,
         };
 
         Ok(PlayerProfileResponse {
-            ok: true,
             cached: false,
             profile,
         })
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // UPDATE NAME
-    // ─────────────────────────────────────────────────────────────────────
-
     /// Update a player's display name.
-    ///
-    /// # Arguments
-    /// * `wallet_address` - The player's wallet address
-    /// * `request` - Update name request
-    ///
-    /// # Returns
-    /// * UpdateNameResponse with new name
     pub async fn update_name(
         &self,
         wallet_address: &str,
         request: UpdateNameRequest,
-    ) -> Result<UpdateNameResponse, String> {
+    ) -> Result<UpdateNameResponse, AppError> {
         let new_name = request.name.trim();
 
         if new_name.is_empty() {
-            return Err("Name cannot be empty".to_string());
+            return Err(AppError::BadRequest("Name cannot be empty".to_string()));
         }
 
         if new_name.len() > 100 {
-            return Err("Name cannot exceed 100 characters".to_string());
+            return Err(AppError::BadRequest(
+                "Name cannot exceed 100 characters".to_string(),
+            ));
         }
 
         let updated = self
             .player_repo
             .update_name(wallet_address, new_name)
-            .await?
-            .ok_or("Player not found")?;
+            .await
+            .map_err(|e| AppError::Internal(e))?
+            .ok_or_else(|| AppError::NotFound("Player not found".to_string()))?;
 
-        Ok(UpdateNameResponse {
-            ok: true,
-            name: updated.name,
-        })
+        Ok(UpdateNameResponse { name: updated.name })
     }
 }

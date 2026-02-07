@@ -1,47 +1,59 @@
 use mongodb::{Client, Database};
-use std::env;
 use std::time::Duration;
 use tokio::time::sleep;
 
-pub async fn connect() -> Result<Database, mongodb::error::Error> {
-    dotenvy::dotenv().ok();
+use crate::config::CONFIG;
 
-    let mongo_uri = env::var("MONGO_URI").unwrap_or_else(|_| "".to_string());
-    let mongo_db_name = env::var("MONGO_DB_NAME").unwrap_or_else(|_| "".to_string());
-    let mongo_conn_retries: u32 = env::var("MONGO_CONN_RETRIES").unwrap_or_else(|_| "".to_string()).parse().unwrap_or(5);
+/// Connects to MongoDB with configurable retry logic and exponential backoff.
+/// Returns the Database handle on success, or an error after all retries are exhausted.
+pub async fn connect() -> Result<Database, mongodb::error::Error> {
+    let mongo_uri = &CONFIG.db.mongo_uri;
+    let db_name = &CONFIG.db.mongo_db_name;
+    let max_retries = CONFIG.db.mongo_conn_retries;
 
     let mut last_error = None;
 
-    for attempt in 1..=mongo_conn_retries {
+    for attempt in 1..=max_retries {
+        tracing::debug!(
+            attempt = attempt,
+            max_retries = max_retries,
+            "Attempting MongoDB connection"
+        );
 
-        match Client::with_uri_str(&mongo_uri).await {
+        match Client::with_uri_str(mongo_uri).await {
             Ok(client) => {
+                // Verify connection with a ping
                 match client
-                    .database(&mongo_db_name)
+                    .database(db_name)
                     .run_command(mongodb::bson::doc! { "ping": 1 })
                     .await
                 {
                     Ok(_) => {
-                        println!("MongoDB connected to: {}", mongo_db_name);
-                        return Ok(client.database(&mongo_db_name));
+                        tracing::info!(db_name = %db_name, "MongoDB connected successfully");
+                        return Ok(client.database(db_name));
                     }
                     Err(e) => {
-                        println!("Ping failed: {}", e);
+                        tracing::warn!(error = %e, attempt = attempt, "MongoDB ping failed");
                         last_error = Some(e);
                     }
                 }
             }
             Err(e) => {
-                println!("Connection failed: {}", e);
+                tracing::warn!(error = %e, attempt = attempt, "MongoDB connection failed");
                 last_error = Some(e);
             }
         }
 
-        if attempt < mongo_conn_retries {
-            println!("Retrying connection...");
-            sleep(Duration::from_secs(1)).await;
+        if attempt < max_retries {
+            let backoff = Duration::from_secs(2_u64.pow(attempt - 1)); // 1s, 2s, 4s...
+            tracing::info!(backoff_secs = ?backoff, "Retrying MongoDB connection");
+            sleep(backoff).await;
         }
     }
 
-    Err(last_error.expect("No error captured"))
+    tracing::error!(
+        retries = max_retries,
+        "All MongoDB connection attempts failed"
+    );
+    Err(last_error.expect("No error captured during connection attempts"))
 }
