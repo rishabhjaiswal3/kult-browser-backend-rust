@@ -1,8 +1,8 @@
 use chrono::Utc;
 use futures::TryStreamExt;
 use mongodb::{bson::doc, options::FindOneAndUpdateOptions, Collection, Database};
-use std::env;
 
+use crate::config::CONFIG;
 use crate::GameModel;
 
 #[derive(Clone)]
@@ -12,12 +12,8 @@ pub struct GameModelRepository {
 
 impl GameModelRepository {
     pub fn new(db: &Database) -> Self {
-        dotenvy::dotenv().ok();
-
-        let games_mongo_coll_name =
-            env::var("GAMES_MONGO_COLL_NAME").unwrap_or_else(|_| "kultbrowser_games".to_string());
         Self {
-            collection: db.collection::<GameModel>(&games_mongo_coll_name),
+            collection: db.collection::<GameModel>(&CONFIG.db.games_collection),
         }
     }
 

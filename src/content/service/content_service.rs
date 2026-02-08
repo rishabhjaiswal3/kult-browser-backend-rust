@@ -27,14 +27,21 @@ impl<'a> ContentService<'a> {
         page_num: u32,
         page_size: u32,
     ) -> Result<ContentResponse, AppError> {
-        // 1. Fetch Config (returns NotFound or Internal error)
+        tracing::debug!(page = %page, section = %section, page_num, page_size, "Fetching content");
+
+        // 1. Fetch Config
         let config = self.config_repo.find_config(page, section).await?;
+        tracing::debug!(
+            config_items = config.content_order.len(),
+            "Content config loaded"
+        );
 
         let total_count = config.content_order.len() as u32;
 
-        // 2. Pagination Logic (Slice the IDs)
+        // 2. Pagination
         let start = ((page_num - 1) * page_size) as usize;
         if start >= config.content_order.len() {
+            tracing::debug!("Pagination beyond available content, returning empty");
             return Ok(ContentResponse {
                 content: vec![],
                 total_content_count: total_count,
@@ -44,16 +51,22 @@ impl<'a> ContentService<'a> {
         }
 
         let end = (start + page_size as usize).min(config.content_order.len());
-        let target_ids = &config.content_order[start..end]; // IDs to fetch
+        let target_ids = &config.content_order[start..end];
+        tracing::debug!(target_count = target_ids.len(), "Fetching content items");
 
-        // 3. Fetch Actual Content (Games only for now)
+        // 3. Fetch Games
         let games_unordered = self
             .game_repo
             .find_by_ids(target_ids.to_vec())
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to fetch games: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to fetch games from DB");
+                AppError::Internal(format!("Failed to fetch games: {}", e))
+            })?;
 
-        // Custom sort to match target_ids order
+        tracing::debug!(fetched = games_unordered.len(), "Games fetched from DB");
+
+        // Sort to match order
         let mut games_map: std::collections::HashMap<String, crate::game::model::GameModel> =
             games_unordered
                 .into_iter()
@@ -63,9 +76,7 @@ impl<'a> ContentService<'a> {
         let mut ordered_content = Vec::new();
         for id in target_ids {
             if let Some(game) = games_map.remove(id) {
-                // Convert to Value
                 if let Ok(game_val) = serde_json::to_value(game) {
-                    // Apply mapping if defined, otherwise return raw
                     let final_val = if let Some(ref mappings) = config.field_mappings {
                         apply_mapping(&game_val, mappings)
                     } else {
@@ -75,6 +86,12 @@ impl<'a> ContentService<'a> {
                 }
             }
         }
+
+        tracing::debug!(
+            returned = ordered_content.len(),
+            total = total_count,
+            "Content response prepared"
+        );
 
         Ok(ContentResponse {
             content: ordered_content,
@@ -87,28 +104,20 @@ impl<'a> ContentService<'a> {
 
 fn apply_mapping(source: &Value, mappings: &[FieldMapping]) -> Value {
     let mut mapped_obj = serde_json::Map::new();
-
     for mapping in mappings {
         let path_parts: Vec<&str> = mapping.db_path.split('.').collect();
         if let Some(val) = extract_value(source, &path_parts) {
             mapped_obj.insert(mapping.response_key.clone(), val.clone());
         }
     }
-
     Value::Object(mapped_obj)
 }
 
-fn extract_value<'a>(source: &'a Value, path: &[&str]) -> Option<&'a Value> {
+fn extract_value<'b>(source: &'b Value, path: &[&str]) -> Option<&'b Value> {
     if path.is_empty() {
         return Some(source);
     }
-
     let key = path[0];
     let rest = &path[1..];
-
-    if let Some(val) = source.get(key) {
-        extract_value(val, rest)
-    } else {
-        None
-    }
+    source.get(key).and_then(|val| extract_value(val, rest))
 }

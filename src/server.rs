@@ -2,6 +2,8 @@ use axum::{http::StatusCode, routing::get, Json, Router};
 use mongodb::Database;
 use serde_json::json;
 use tokio::net::TcpListener;
+use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
+use tracing::Level;
 
 use crate::config::CONFIG;
 use crate::content;
@@ -19,6 +21,7 @@ async fn health_check() -> Json<serde_json::Value> {
 
 /// Fallback handler for unmatched routes - returns structured 404
 async fn fallback() -> (StatusCode, Json<serde_json::Value>) {
+    tracing::warn!("Route not found");
     (
         StatusCode::NOT_FOUND,
         Json(json!({
@@ -32,6 +35,12 @@ async fn fallback() -> (StatusCode, Json<serde_json::Value>) {
 fn build_router(db: Database) -> Router {
     let client = db.client().clone();
 
+    // HTTP request/response tracing middleware
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+        .on_request(DefaultOnRequest::new().level(Level::INFO))
+        .on_response(DefaultOnResponse::new().level(Level::INFO));
+
     Router::new()
         .route("/api/health", get(health_check))
         .nest("/api/content", content::routes(db.clone()))
@@ -42,6 +51,7 @@ fn build_router(db: Database) -> Router {
         )
         .nest("/api/player", player::routes(db.clone(), client))
         .fallback(fallback)
+        .layer(trace_layer)
 }
 
 /// Start the HTTP server

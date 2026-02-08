@@ -1,10 +1,10 @@
+use crate::config::CONFIG;
 use crate::player::model::PlayerModel;
 use futures::stream::TryStreamExt;
 use mongodb::bson::{doc, oid::ObjectId, DateTime as BsonDateTime, Document};
 use mongodb::{Collection, Database};
 
 /// Repository for Player CRUD operations.
-/// Collection: `store_players`
 #[derive(Clone)]
 pub struct PlayerRepository {
     collection: Collection<PlayerModel>,
@@ -14,7 +14,7 @@ impl PlayerRepository {
     /// Create a new repository instance
     pub fn new(db: &Database) -> Self {
         Self {
-            collection: db.collection("store_players"),
+            collection: db.collection(&CONFIG.db.players_collection),
         }
     }
 

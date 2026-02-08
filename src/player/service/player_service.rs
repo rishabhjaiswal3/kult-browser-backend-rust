@@ -33,7 +33,10 @@ impl PlayerService {
     /// Handle player login (find or create).
     pub async fn login(&self, request: LoginRequest) -> Result<LoginResponse, AppError> {
         let wallet = request.wallet_address.trim().to_lowercase();
+        tracing::info!(wallet = %wallet, "Player login attempt");
+
         if wallet.is_empty() {
+            tracing::warn!("Login attempt with empty wallet address");
             return Err(AppError::BadRequest(
                 "walletAddress is required".to_string(),
             ));
@@ -52,13 +55,25 @@ impl PlayerService {
             .metadata
             .and_then(|v| mongodb::bson::to_document(&v).ok());
 
-        let (player, _is_new) = self
+        let (player, is_new) = self
             .player_repo
             .find_or_create(&wallet, &name, metadata)
             .await
-            .map_err(|e| AppError::Internal(e))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, wallet = %wallet, "DB error during login");
+                AppError::Internal(e)
+            })?;
 
-        let token = AuthService::sign_token(&player).map_err(|e| AppError::Internal(e))?;
+        if is_new {
+            tracing::info!(wallet = %wallet, name = %name, "New player registered");
+        } else {
+            tracing::debug!(wallet = %wallet, "Existing player logged in");
+        }
+
+        let token = AuthService::sign_token(&player).map_err(|e| {
+            tracing::error!(error = %e, "Failed to sign JWT token");
+            AppError::Internal(e)
+        })?;
 
         Ok(LoginResponse {
             token,
@@ -76,23 +91,43 @@ impl PlayerService {
         wallet_address: &str,
     ) -> Result<PlayerProfileResponse, AppError> {
         let wallet = wallet_address.trim().to_lowercase();
+        tracing::debug!(wallet = %wallet, "Fetching player profile");
 
         let player = self
             .player_repo
             .find_by_wallet(&wallet)
             .await
-            .map_err(|e| AppError::Internal(e))?
-            .ok_or_else(|| AppError::NotFound("Player not found".to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, wallet = %wallet, "DB error fetching player");
+                AppError::Internal(e)
+            })?
+            .ok_or_else(|| {
+                tracing::warn!(wallet = %wallet, "Player not found");
+                AppError::NotFound("Player not found".to_string())
+            })?;
 
         let global_entry = self
             .global_lb_repo
             .get_player_entry(&wallet)
             .await
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to fetch global leaderboard entry");
+                AppError::Internal(e.to_string())
+            })?;
 
         let (rank, total_score, level) = match global_entry {
-            Some(entry) => (Some(entry.rank), entry.score, entry.level),
-            None => (None, 0.0, 1),
+            Some(entry) => {
+                tracing::debug!(
+                    rank = entry.rank,
+                    level = entry.level,
+                    "Player leaderboard entry found"
+                );
+                (Some(entry.rank), entry.score, entry.level)
+            }
+            None => {
+                tracing::debug!(wallet = %wallet, "Player not ranked yet");
+                (None, 0.0, 1)
+            }
         };
 
         let game_scores = self
@@ -100,6 +135,8 @@ impl PlayerService {
             .fetch_scores_for_player(&wallet)
             .await
             .unwrap_or_default();
+
+        tracing::debug!(games_played = game_scores.len(), "Game scores fetched");
 
         let game_scores_list: Vec<GameScoreEntry> = game_scores
             .into_iter()
@@ -136,12 +173,15 @@ impl PlayerService {
         request: UpdateNameRequest,
     ) -> Result<UpdateNameResponse, AppError> {
         let new_name = request.name.trim();
+        tracing::debug!(wallet = %wallet_address, new_name = %new_name, "Updating player name");
 
         if new_name.is_empty() {
+            tracing::warn!(wallet = %wallet_address, "Attempted to set empty name");
             return Err(AppError::BadRequest("Name cannot be empty".to_string()));
         }
 
         if new_name.len() > 100 {
+            tracing::warn!(wallet = %wallet_address, len = new_name.len(), "Name too long");
             return Err(AppError::BadRequest(
                 "Name cannot exceed 100 characters".to_string(),
             ));
@@ -151,9 +191,16 @@ impl PlayerService {
             .player_repo
             .update_name(wallet_address, new_name)
             .await
-            .map_err(|e| AppError::Internal(e))?
-            .ok_or_else(|| AppError::NotFound("Player not found".to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "DB error updating player name");
+                AppError::Internal(e)
+            })?
+            .ok_or_else(|| {
+                tracing::warn!(wallet = %wallet_address, "Player not found for name update");
+                AppError::NotFound("Player not found".to_string())
+            })?;
 
+        tracing::info!(wallet = %wallet_address, new_name = %updated.name, "Player name updated");
         Ok(UpdateNameResponse { name: updated.name })
     }
 }

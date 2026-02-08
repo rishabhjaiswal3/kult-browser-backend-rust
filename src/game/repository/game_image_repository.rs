@@ -5,6 +5,7 @@ use mongodb::{
     Collection, Database,
 };
 
+use crate::config::CONFIG;
 use crate::game::model::game_image_model::{
     GameImages, ImageObject, IndexedImage, OrientedImage, OrientedImageArray,
 };
@@ -17,11 +18,8 @@ pub struct GameModelImageRepository {
 impl GameModelImageRepository {
     // Create a new repository instance
     pub fn new(db: &Database) -> Self {
-        dotenvy::dotenv().ok();
-        let games_mongo_coll_name = std::env::var("GAMES_MONGO_COLL_NAME")
-            .unwrap_or_else(|_| "kultbrowser_games".to_string());
         Self {
-            collection: db.collection::<GameModel>(&games_mongo_coll_name),
+            collection: db.collection::<GameModel>(&CONFIG.db.games_collection),
         }
     }
 

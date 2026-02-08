@@ -1,3 +1,4 @@
+use crate::config::CONFIG;
 use crate::content::model::ContentConfig;
 use crate::handler::AppError;
 use mongodb::{Collection, Database};
@@ -8,8 +9,9 @@ pub struct ContentConfigRepository {
 
 impl ContentConfigRepository {
     pub fn new(db: &Database) -> Self {
-        let collection = db.collection::<ContentConfig>("content_configs");
-        Self { collection }
+        Self {
+            collection: db.collection::<ContentConfig>(&CONFIG.db.content_collection),
+        }
     }
 
     /// Find a content config by page and section.

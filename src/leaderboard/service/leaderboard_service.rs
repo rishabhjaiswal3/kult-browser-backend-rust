@@ -34,6 +34,8 @@ impl GlobalLeaderboardService {
         page: u32,
         page_size: u32,
     ) -> Result<GlobalLeaderboardResponse, AppError> {
+        tracing::debug!(page, page_size, "Fetching global leaderboard");
+
         let skip = ((page.saturating_sub(1)) * page_size) as u64;
         let limit = page_size as i64;
 
@@ -41,13 +43,21 @@ impl GlobalLeaderboardService {
             .global_repo
             .get_global_ranking(skip, limit)
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to fetch leaderboard: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to fetch global leaderboard from DB");
+                AppError::Internal(format!("Failed to fetch leaderboard: {}", e))
+            })?;
 
-        let total_count = self
-            .global_repo
-            .count_all()
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to count entries: {}", e)))?;
+        let total_count = self.global_repo.count_all().await.map_err(|e| {
+            tracing::error!(error = %e, "Failed to count leaderboard entries");
+            AppError::Internal(format!("Failed to count entries: {}", e))
+        })?;
+
+        tracing::debug!(
+            fetched = entries.len(),
+            total = total_count,
+            "Leaderboard query completed"
+        );
 
         let total_pages = if total_count == 0 {
             0
@@ -80,11 +90,14 @@ impl GlobalLeaderboardService {
     }
 
     pub async fn refresh_global_leaderboard(&self) -> Result<usize, AppError> {
-        let configs = self
-            .config_repo
-            .find_all()
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to fetch configs: {}", e)))?;
+        tracing::info!("Starting global leaderboard refresh");
+
+        let configs = self.config_repo.find_all().await.map_err(|e| {
+            tracing::error!(error = %e, "Failed to fetch leaderboard configs");
+            AppError::Internal(format!("Failed to fetch configs: {}", e))
+        })?;
+
+        tracing::debug!(game_count = configs.len(), "Fetching scores from all games");
 
         let mut tasks = Vec::new();
         for config in &configs {
@@ -97,21 +110,42 @@ impl GlobalLeaderboardService {
         let results = futures::future::join_all(tasks).await;
 
         let mut player_totals: HashMap<String, f64> = HashMap::new();
+        let mut games_processed = 0;
+        let mut games_failed = 0;
 
         for (i, result) in results.into_iter().enumerate() {
             match result {
                 Ok(entries) => {
                     let weight = configs[i].weight;
+                    tracing::debug!(
+                        game = %configs[i].identification,
+                        entries = entries.len(),
+                        weight,
+                        "Game leaderboard fetched"
+                    );
                     for entry in entries {
                         let total = player_totals.entry(entry.player).or_insert(0.0);
                         *total += entry.score * weight;
                     }
+                    games_processed += 1;
                 }
                 Err(e) => {
-                    tracing::warn!(game = %configs[i].identification, error = %e, "Failed to fetch game leaderboard");
+                    tracing::error!(
+                        game = %configs[i].identification,
+                        error = %e,
+                        "Failed to fetch game leaderboard"
+                    );
+                    games_failed += 1;
                 }
             }
         }
+
+        tracing::debug!(
+            games_processed,
+            games_failed,
+            unique_players = player_totals.len(),
+            "Score aggregation completed"
+        );
 
         let mut global_entries = Vec::new();
         let now = Utc::now();
@@ -139,7 +173,17 @@ impl GlobalLeaderboardService {
         self.global_repo
             .replace_all(&global_entries)
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to persist leaderboard: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to persist global leaderboard");
+                AppError::Internal(format!("Failed to persist leaderboard: {}", e))
+            })?;
+
+        tracing::info!(
+            entries = count,
+            games_processed,
+            games_failed,
+            "Global leaderboard refresh completed"
+        );
 
         Ok(count)
     }

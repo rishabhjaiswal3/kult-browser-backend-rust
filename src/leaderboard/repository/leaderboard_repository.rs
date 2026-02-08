@@ -1,3 +1,4 @@
+use crate::config::CONFIG;
 use crate::leaderboard::model::GlobalLeaderboardModel;
 use futures::stream::TryStreamExt;
 use mongodb::bson::doc;
@@ -11,7 +12,7 @@ pub struct GlobalLeaderboardRepository {
 impl GlobalLeaderboardRepository {
     pub fn new(db: &Database) -> Self {
         Self {
-            collection: db.collection("global_leaderboards"),
+            collection: db.collection(&CONFIG.db.global_leaderboard_collection),
         }
     }
 

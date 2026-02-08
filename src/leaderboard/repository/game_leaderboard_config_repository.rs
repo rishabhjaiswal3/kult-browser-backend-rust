@@ -1,3 +1,4 @@
+use crate::config::CONFIG;
 use crate::leaderboard::model::GameLeaderboardConfig;
 use futures::stream::TryStreamExt;
 use mongodb::{Collection, Database};
@@ -10,7 +11,7 @@ pub struct GameLeaderboardConfigRepository {
 impl GameLeaderboardConfigRepository {
     pub fn new(db: &Database) -> Self {
         Self {
-            collection: db.collection("store_games_leaderboards"),
+            collection: db.collection(&CONFIG.db.game_leaderboard_config_collection),
         }
     }
 

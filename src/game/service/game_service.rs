@@ -23,6 +23,8 @@ impl GameService {
         page: u32,
         page_size: u32,
     ) -> Result<AllGamesResponse, AppError> {
+        tracing::debug!(search = ?search, page, page_size, "Fetching all games");
+
         let skip = ((page.saturating_sub(1)) * page_size) as i64;
         let limit = page_size as i64;
 
@@ -30,7 +32,16 @@ impl GameService {
             .repo
             .find_all_paginated(search.as_deref(), skip, limit)
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to fetch games: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to fetch games from DB");
+                AppError::Internal(format!("Failed to fetch games: {}", e))
+            })?;
+
+        tracing::debug!(
+            fetched = games.len(),
+            total = total_count,
+            "Games query completed"
+        );
 
         let game_dtos: Vec<GameListItemDto> = games.into_iter().map(Self::to_list_item).collect();
 
@@ -54,13 +65,22 @@ impl GameService {
         &self,
         identification: &str,
     ) -> Result<GameDetailResponse, AppError> {
+        tracing::debug!(identification = %identification, "Fetching game by ID");
+
         let game = self
             .repo
             .find_by_identification(identification)
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to fetch game: {}", e)))?
-            .ok_or_else(|| AppError::NotFound(format!("Game '{}' not found", identification)))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, identification = %identification, "DB error fetching game");
+                AppError::Internal(format!("Failed to fetch game: {}", e))
+            })?
+            .ok_or_else(|| {
+                tracing::warn!(identification = %identification, "Game not found");
+                AppError::NotFound(format!("Game '{}' not found", identification))
+            })?;
 
+        tracing::debug!(identification = %identification, "Game found");
         Ok(GameDetailResponse {
             game: Self::to_detail(game),
         })
@@ -68,12 +88,14 @@ impl GameService {
 
     /// Get all unique categories.
     pub async fn get_all_categories(&self) -> Result<CategoriesResponse, AppError> {
-        let categories = self
-            .repo
-            .get_distinct_categories()
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to fetch categories: {}", e)))?;
+        tracing::debug!("Fetching all categories");
 
+        let categories = self.repo.get_distinct_categories().await.map_err(|e| {
+            tracing::error!(error = %e, "Failed to fetch categories from DB");
+            AppError::Internal(format!("Failed to fetch categories: {}", e))
+        })?;
+
+        tracing::debug!(count = categories.len(), "Categories fetched");
         Ok(CategoriesResponse { categories })
     }
 
