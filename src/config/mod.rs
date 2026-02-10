@@ -3,22 +3,29 @@
 
 pub mod app_config;
 pub mod db_config;
+pub mod do_config;
 pub mod log_config;
+pub mod valkey_config;
+pub mod zg_config;
 
 use once_cell::sync::Lazy;
 
 pub use app_config::AppConfig;
 pub use db_config::DbConfig;
+pub use do_config::DoConfig;
 pub use log_config::LogConfig;
+pub use valkey_config::ValkeyConfig;
+pub use zg_config::ZgConfig;
 
 /// Global configuration loaded once at startup
 #[derive(Debug, Clone)]
 pub struct Config {
     pub app: AppConfig,
     pub db: DbConfig,
+    pub do_spaces: DoConfig,
     pub log: LogConfig,
-    // Future: pub auth: AuthConfig,
-    // Future: pub redis: RedisConfig,
+    pub valkey: ValkeyConfig,
+    pub zg: ZgConfig,
 }
 
 impl Config {
@@ -28,7 +35,10 @@ impl Config {
         Self {
             app: AppConfig::from_env(),
             db: DbConfig::from_env(),
+            do_spaces: DoConfig::from_env(),
             log: LogConfig::from_env(),
+            valkey: ValkeyConfig::from_env(),
+            zg: ZgConfig::from_env(),
         }
     }
 }

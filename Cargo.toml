@@ -23,6 +23,22 @@ path = "src/bin/test_fetch_leaderboard.rs"
 name = "test_global_leaderboard"
 path = "src/bin/test_global_leaderboard.rs"
 
+[[bin]]
+name = "test_queue_producer"
+path = "src/bin/test_queue_producer.rs"
+
+[[bin]]
+name = "moments_worker"
+path = "src/bin/moments_worker.rs"
+
+[[bin]]
+name = "test_0g_upload"
+path = "src/bin/test_0g_upload.rs"
+
+[[bin]]
+name = "test_do_download"
+path = "src/bin/test_do_download.rs"
+
 [dependencies]
 mongodb = "3.1"
 tokio = { version = "1", features = ["full"] }
@@ -38,3 +54,6 @@ once_cell = "1.21.3"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
 tower-http = { version = "0.5", features = ["trace"] }
+nanoid = "0.4"
+redis = "0.27"
+reqwest = { version = "0.12", features = ["blocking"] }

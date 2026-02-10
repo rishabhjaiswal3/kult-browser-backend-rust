@@ -1,12 +1,15 @@
 pub mod config;
 pub mod content;
+pub mod external;
 pub mod game;
 pub mod handler;
 pub mod leaderboard;
 pub mod logging;
 pub mod middleware;
+pub mod moments;
 pub mod mongo;
 pub mod player;
+pub mod redis;
 pub mod server;
 
 // Re-export at crate root

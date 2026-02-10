@@ -9,6 +9,7 @@ use crate::config::CONFIG;
 use crate::content;
 use crate::game;
 use crate::leaderboard;
+use crate::moments;
 use crate::player;
 
 /// Health check endpoint
@@ -50,6 +51,7 @@ fn build_router(db: Database) -> Router {
             leaderboard::routes(db.clone(), client.clone()),
         )
         .nest("/api/player", player::routes(db.clone(), client))
+        .nest("/api/moments", moments::routes(db.clone(), None))
         .fallback(fallback)
         .layer(trace_layer)
 }
