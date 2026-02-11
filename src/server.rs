@@ -10,7 +10,9 @@ use crate::content;
 use crate::game;
 use crate::leaderboard;
 use crate::moments;
+use crate::moments::MIGRATION_QUEUE;
 use crate::player;
+use crate::redis::{connect as valkey_connect, ValkyQueue};
 
 /// Health check endpoint
 async fn health_check() -> Json<serde_json::Value> {
@@ -36,6 +38,18 @@ async fn fallback() -> (StatusCode, Json<serde_json::Value>) {
 fn build_router(db: Database) -> Router {
     let client = db.client().clone();
 
+    // Connect to Valkey for migration queue
+    let migration_queue = match valkey_connect() {
+        Ok(valkey_client) => {
+            tracing::info!("Connected to Valkey for migration queue");
+            Some(ValkyQueue::new(valkey_client, MIGRATION_QUEUE))
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "Valkey not available — migration queue disabled");
+            None
+        }
+    };
+
     // HTTP request/response tracing middleware
     let trace_layer = TraceLayer::new_for_http()
         .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
@@ -51,7 +65,7 @@ fn build_router(db: Database) -> Router {
             leaderboard::routes(db.clone(), client.clone()),
         )
         .nest("/api/player", player::routes(db.clone(), client))
-        .nest("/api/moments", moments::routes(db.clone(), None))
+        .nest("/api/moments", moments::routes(db.clone(), migration_queue))
         .fallback(fallback)
         .layer(trace_layer)
 }

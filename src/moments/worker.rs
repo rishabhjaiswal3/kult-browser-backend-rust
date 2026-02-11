@@ -88,7 +88,7 @@ impl MigrationWorker {
     /// 4. Cleanup temp file
     async fn process_job(&self, job: MigrationJob) {
         // Step 1: Download from DO Spaces
-        let download = match spaces::download_file(&job.asset_url) {
+        let download = match spaces::download_file(&job.asset_url).await {
             Ok(result) => {
                 tracing::info!(
                     asset_id = %job.asset_id,

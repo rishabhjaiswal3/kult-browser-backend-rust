@@ -24,7 +24,15 @@ pub struct UploadResult {
 pub fn upload_file(file_path: &str) -> Result<UploadResult, String> {
     let cfg = &CONFIG.zg;
 
-    tracing::info!(file = %file_path, "Starting 0G upload");
+    // Log the full command being run (private key redacted)
+    tracing::info!(
+        command = %format!(
+            "{} upload --url {} --key <REDACTED> --indexer {} --file {} --rpc-timeout {} --rpc-retry-count {} --rpc-retry-interval {} --log-level debug --web3-log-enabled",
+            cfg.binary_path, cfg.rpc_url, cfg.indexer_url, file_path,
+            cfg.rpc_timeout, cfg.rpc_retry_count, cfg.rpc_retry_interval
+        ),
+        "Running 0G upload"
+    );
 
     let output = Command::new(&cfg.binary_path)
         .arg("upload")
@@ -50,24 +58,19 @@ pub fn upload_file(file_path: &str) -> Result<UploadResult, String> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-
-    // The CLI logs to stderr (logrus format)
     let combined = format!("{}\n{}", stdout, stderr);
 
-    tracing::debug!(output = %combined, "0g-storage-client output");
-
     if !output.status.success() {
-        tracing::error!(
-            exit_code = ?output.status.code(),
-            output = %combined,
-            "0g-storage-client failed"
-        );
-        return Err(format!("0g-storage-client exited with: {}", output.status));
+        // Extract clean error from FATA line instead of dumping everything
+        let error_msg = parse_fatal_error(&combined)
+            .unwrap_or_else(|| format!("0g-storage-client exited with: {}", output.status));
+        tracing::error!(error = %error_msg, "0G upload failed");
+        return Err(error_msg);
     }
 
     // Parse root hash from: "file uploaded, root = 0x..."
     let root_hash = parse_root_hash(&combined).ok_or_else(|| {
-        tracing::error!(output = %combined, "Could not parse root hash from output");
+        tracing::error!("Could not parse root hash from 0g-storage-client output");
         "Could not parse root hash from 0g-storage-client output".to_string()
     })?;
 
@@ -83,12 +86,29 @@ pub fn upload_file(file_path: &str) -> Result<UploadResult, String> {
     Ok(UploadResult { root_hash, tx_hash })
 }
 
+/// Parse the FATA (fatal) line from logrus output for a clean error message.
+fn parse_fatal_error(output: &str) -> Option<String> {
+    for line in output.lines() {
+        if line.contains("FATA") {
+            // Extract the error= field value
+            if let Some(pos) = line.find("error=") {
+                let msg = line[pos + 7..].trim().trim_matches('"').to_string();
+                return Some(msg);
+            }
+            // Fallback: extract the message part after the log level bracket
+            if let Some(pos) = line.find(']') {
+                return Some(line[pos + 1..].trim().to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Parse root hash from CLI output.
 /// Looks for: `file uploaded, root = 0x<hash>`
 fn parse_root_hash(output: &str) -> Option<String> {
     for line in output.lines() {
         if line.contains("file uploaded, root =") {
-            // Extract everything after "root = "
             if let Some(pos) = line.find("root = ") {
                 let hash = line[pos + 7..].trim().to_string();
                 if hash.starts_with("0x") {

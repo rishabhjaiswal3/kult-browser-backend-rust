@@ -3,8 +3,6 @@
 
 use std::path::{Path, PathBuf};
 
-use reqwest::blocking::Client;
-
 use crate::config::CONFIG;
 
 /// Result of a successful download.
@@ -18,15 +16,15 @@ pub struct DownloadResult {
 
 /// Download a file from a DO Spaces URL to a local temp directory.
 ///
-/// The file is saved to `/tmp/moments/<filename>` extracted from the URL.
+/// The file is saved to `<DOWNLOAD_TMP_DIR>/<filename>` extracted from the URL.
 /// Creates the directory if it doesn't exist.
 ///
 /// # Arguments
-/// * `do_url` - Full DigitalOcean Spaces URL (e.g., `https://bucket.sgp1.digitaloceanspaces.com/moments/file.gif`)
+/// * `do_url` - Full DigitalOcean Spaces URL
 ///
 /// # Returns
 /// `DownloadResult` with local path and size, or error string.
-pub fn download_file(do_url: &str) -> Result<DownloadResult, String> {
+pub async fn download_file(do_url: &str) -> Result<DownloadResult, String> {
     tracing::info!(url = %do_url, "Downloading file from DO Spaces");
 
     // Extract filename from URL
@@ -38,11 +36,9 @@ pub fn download_file(do_url: &str) -> Result<DownloadResult, String> {
 
     let local_path = tmp_dir.join(&filename);
 
-    // Download
-    let client = Client::new();
-    let response = client
-        .get(do_url)
-        .send()
+    // Download using async reqwest
+    let response = reqwest::get(do_url)
+        .await
         .map_err(|e| format!("HTTP request failed: {}", e))?;
 
     if !response.status().is_success() {
@@ -55,6 +51,7 @@ pub fn download_file(do_url: &str) -> Result<DownloadResult, String> {
 
     let bytes = response
         .bytes()
+        .await
         .map_err(|e| format!("Failed to read response body: {}", e))?;
 
     let size_bytes = bytes.len() as u64;
@@ -87,14 +84,10 @@ pub fn cleanup(path: &Path) {
 }
 
 /// Extract filename from a URL.
-/// e.g., `https://bucket.sgp1.digitaloceanspaces.com/moments/abc.gif` → `abc.gif`
 fn extract_filename(url: &str) -> Result<String, String> {
     url.rsplit('/')
         .next()
         .filter(|f| !f.is_empty())
-        .map(|f| {
-            // Remove query params if any
-            f.split('?').next().unwrap_or(f).to_string()
-        })
+        .map(|f| f.split('?').next().unwrap_or(f).to_string())
         .ok_or_else(|| format!("Could not extract filename from URL: {}", url))
 }
