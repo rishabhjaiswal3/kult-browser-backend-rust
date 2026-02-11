@@ -66,6 +66,13 @@ fn build_router(db: Database) -> Router {
         )
         .nest("/api/player", player::routes(db.clone(), client))
         .nest("/api/moments", moments::routes(db.clone(), migration_queue))
+        .nest(
+            "/api/upload",
+            axum::Router::new().route(
+                "/presign",
+                axum::routing::post(crate::upload::controller::generate_presigned_url),
+            ),
+        )
         .fallback(fallback)
         .layer(trace_layer)
 }

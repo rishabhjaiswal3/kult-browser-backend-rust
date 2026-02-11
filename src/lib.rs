@@ -11,6 +11,7 @@ pub mod mongo;
 pub mod player;
 pub mod redis;
 pub mod server;
+pub mod upload;
 
 // Re-export at crate root
 pub use game::GameModel;
