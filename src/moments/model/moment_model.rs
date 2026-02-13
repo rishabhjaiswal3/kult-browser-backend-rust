@@ -24,6 +24,22 @@ pub struct MomentModel {
     #[serde(rename = "assetUrl", default)]
     pub asset_url: Option<String>,
 
+    /// Original filename from upload
+    #[serde(
+        rename = "originalFilename",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub original_filename: Option<String>,
+
+    /// File size in bytes from upload
+    #[serde(
+        rename = "fileSizeBytes",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub file_size_bytes: Option<u64>,
+
     /// ZG hash of the asset (empty until migrated)
     #[serde(rename = "assetZgHash", default)]
     pub asset_zg_hash: Option<String>,

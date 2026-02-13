@@ -1,7 +1,7 @@
 // src/moments/route/moments_routes.rs
 
 use axum::{
-    routing::{delete, get, patch, post},
+    routing::{get, post},
     Router,
 };
 use mongodb::Database;

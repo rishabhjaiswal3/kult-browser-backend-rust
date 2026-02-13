@@ -28,7 +28,7 @@ impl SpacesService {
             .credentials_provider(credentials)
             .region(Region::new(config.region.clone()))
             .endpoint_url(&config.endpoint)
-            .force_path_style(false) // Spaces supports virtual-hosted style
+            .force_path_style(true) // Spaces supports path style too, might be safer for presigned
             .behavior_version(BehaviorVersion::latest())
             .build();
 
@@ -44,9 +44,14 @@ impl SpacesService {
     pub async fn generate_presigned_upload_url(
         &self,
         filename: &str,
-        content_type: &str,
+        _content_type: &str,
     ) -> Result<aws_sdk_s3::presigning::PresignedRequest, String> {
-        let expiration = Duration::from_secs(CONFIG.do_spaces.presigned_expiration);
+        let config = &CONFIG.do_spaces;
+        let expiration = Duration::from_secs(config.presigned_expiration);
+
+        // Construct key with normalized upload prefix.
+        let upload_path = config.effective_upload_path();
+        let key = format!("{}/{}", upload_path, filename);
 
         // Create presigning config
         let presigning_config = PresigningConfig::builder()
@@ -59,9 +64,13 @@ impl SpacesService {
             .client
             .put_object()
             .bucket(&self.bucket)
-            .key(filename)
-            .content_type(content_type)
+            .key(&key)
+            // Make uploaded objects publicly readable.
+            // This is signed into the URL as x-amz-acl and must be sent by the client.
             .acl(aws_sdk_s3::types::ObjectCannedAcl::PublicRead)
+            // Do not sign content-type for browser uploads.
+            // Browser/runtime header normalization can produce casing/value variations
+            // that otherwise trigger SignatureDoesNotMatch on Spaces.
             .presigned(presigning_config)
             .await
             .map_err(|e| format!("Failed to generate presigned URL: {}", e))?;
@@ -80,17 +89,29 @@ impl SpacesService {
             .trim_start_matches("http://");
 
         // Case 1: Virtual hosted style: https://bucket.endpoint/key
-        let domain = format!("{}.{}", self.bucket, endpoint_host);
+        // Case 2: Path style: https://endpoint/bucket/key
 
-        let key = if public_url.contains(&domain) {
+        // Check path style first (e.g. sfo3.digitaloceanspaces.com/kult-browser/...)
+        let path_prefix = format!("{}/{}/", endpoint_host, self.bucket);
+        let key = if public_url.contains(&path_prefix) {
             public_url
-                .split(&domain)
+                .split(&path_prefix)
                 .nth(1)
                 .unwrap_or("")
-                .trim_start_matches('/')
+                .to_string()
         } else {
-            // Fallback: extract last part (fragile but handles simple cases)
-            public_url.split('/').last().unwrap_or("")
+            // Fallback to virtual hosted or simple extraction
+            let domain = format!("{}.{}", self.bucket, endpoint_host);
+            if public_url.contains(&domain) {
+                public_url
+                    .split(&domain)
+                    .nth(1)
+                    .unwrap_or("")
+                    .trim_start_matches('/')
+                    .to_string()
+            } else {
+                public_url.split('/').last().unwrap_or("").to_string()
+            }
         };
 
         if key.is_empty() {

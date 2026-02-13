@@ -24,6 +24,14 @@ pub struct MomentResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asset_metadata: Option<serde_json::Value>,
 
+    /// Original filename
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_filename: Option<String>,
+
+    /// File size in bytes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_size_bytes: Option<u64>,
+
     /// Title
     pub title: String,
 

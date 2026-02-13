@@ -19,8 +19,13 @@ pub struct PresignResponse {
     pub required_headers: HashMap<String, String>,
 }
 
-#[instrument(skip(payload))]
-pub async fn generate_presigned_url(Json(payload): Json<PresignRequest>) -> impl IntoResponse {
+use crate::middleware::AuthPlayer;
+
+#[instrument(skip(payload, _auth))]
+pub async fn generate_presigned_url(
+    _auth: AuthPlayer,
+    Json(payload): Json<PresignRequest>,
+) -> impl IntoResponse {
     let service = SpacesService::new();
 
     match service
@@ -44,10 +49,11 @@ pub async fn generate_presigned_url(Json(payload): Json<PresignRequest>) -> impl
                 .endpoint
                 .trim_start_matches("https://")
                 .trim_start_matches("http://");
-            let public_url = format!(
-                "https://{}.{}/{}",
-                config.bucket, endpoint_clean, payload.filename
-            );
+
+            let upload_path = config.effective_upload_path();
+            let key = format!("{}/{}", upload_path, payload.filename);
+
+            let public_url = format!("https://{}.{}/{}", config.bucket, endpoint_clean, key);
 
             // Extract headers required for the upload
             let mut required_headers = HashMap::new();

@@ -20,6 +20,8 @@ pub struct DoConfig {
     pub download_tmp_dir: String,
     /// Expiration time for presigned URLs in seconds
     pub presigned_expiration: u64,
+    /// Optional upload path prefix (e.g., "moments/")
+    pub upload_path: String,
 }
 
 impl DoConfig {
@@ -38,6 +40,18 @@ impl DoConfig {
                 .unwrap_or_else(|_| "300".to_string())
                 .parse()
                 .expect("MOMENTS_DO_SPACES_PRESIGNED_EXPIRATION must be a number"),
+            upload_path: env::var("MOMENTS_UPLOAD_PATH").unwrap_or_default(),
+        }
+    }
+
+    /// Resolve upload prefix used for moments assets.
+    /// Falls back to "moments" when config is missing/empty.
+    pub fn effective_upload_path(&self) -> String {
+        let normalized = self.upload_path.trim().trim_matches('/');
+        if normalized.is_empty() {
+            "moments".to_string()
+        } else {
+            normalized.to_string()
         }
     }
 }

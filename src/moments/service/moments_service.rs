@@ -95,6 +95,8 @@ impl MomentsService {
                 .and_then(|v| mongodb::bson::to_document(&v).ok()),
             created_at: None,
             updated_at: None,
+            original_filename: None,
+            file_size_bytes: None,
         };
 
         self.repo.create(moment).await.map_err(|e| {
@@ -286,6 +288,14 @@ impl MomentsService {
 
             updates.insert("assetUrl", url.trim());
         }
+        if let Some(filename) = request.original_filename {
+            if !filename.trim().is_empty() {
+                updates.insert("originalFilename", filename.trim());
+            }
+        }
+        if let Some(size) = request.file_size_bytes {
+            updates.insert("fileSizeBytes", size as i64);
+        }
         if let Some(meta) = request.asset_metadata {
             if let Ok(doc) = mongodb::bson::to_document(&meta) {
                 updates.insert("assetMetadata", doc);
@@ -394,6 +404,8 @@ impl MomentsService {
                 .updated_at
                 .map(|dt| dt.try_to_rfc3339_string().unwrap_or_default())
                 .unwrap_or_default(),
+            original_filename: moment.original_filename,
+            file_size_bytes: moment.file_size_bytes,
         }
     }
 }

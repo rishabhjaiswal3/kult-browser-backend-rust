@@ -13,6 +13,12 @@ pub struct UpdateMomentRequest {
     /// Updated asset metadata
     pub asset_metadata: Option<serde_json::Value>,
 
+    /// Original filename from upload
+    pub original_filename: Option<String>,
+
+    /// File size in bytes from upload
+    pub file_size_bytes: Option<u64>,
+
     /// Updated title
     pub title: Option<String>,
 

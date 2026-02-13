@@ -56,6 +56,26 @@ fn build_router(db: Database) -> Router {
         .on_request(DefaultOnRequest::new().level(Level::INFO))
         .on_response(DefaultOnResponse::new().level(Level::INFO));
 
+    // CORS Middleware
+    let cors = if CONFIG.app.cors_origins.len() == 1 && CONFIG.app.cors_origins[0] == "*" {
+        tower_http::cors::CorsLayer::new()
+            .allow_origin(tower_http::cors::Any)
+            .allow_methods(tower_http::cors::Any)
+            .allow_headers(tower_http::cors::Any)
+    } else {
+        let origins: Vec<axum::http::HeaderValue> = CONFIG
+            .app
+            .cors_origins
+            .iter()
+            .map(|s| s.parse().unwrap())
+            .collect();
+        tower_http::cors::CorsLayer::new()
+            .allow_origin(origins)
+            .allow_methods(tower_http::cors::Any)
+            .allow_headers(tower_http::cors::Any)
+            .allow_credentials(true)
+    };
+
     Router::new()
         .route("/api/health", get(health_check))
         .nest("/api/content", content::routes(db.clone()))
@@ -75,6 +95,7 @@ fn build_router(db: Database) -> Router {
         )
         .fallback(fallback)
         .layer(trace_layer)
+        .layer(cors)
 }
 
 /// Start the HTTP server
