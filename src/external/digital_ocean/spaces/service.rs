@@ -16,7 +16,7 @@ pub struct SpacesService {
 
 impl SpacesService {
     /// Create a new SpacesService instance using global configuration
-    pub async fn new() -> Self {
+    pub fn new() -> Self {
         let config = &CONFIG.do_spaces;
 
         // Create static credentials
@@ -67,5 +67,47 @@ impl SpacesService {
             .map_err(|e| format!("Failed to generate presigned URL: {}", e))?;
 
         Ok(presigned_request)
+    }
+    /// Check if a file exists in the bucket by its public URL
+    pub async fn check_file_exists(&self, public_url: &str) -> bool {
+        // Parse key from URL
+        // Expected format: https://<bucket>.<endpoint>/<key>
+
+        let config = &CONFIG.do_spaces;
+        let endpoint_host = config
+            .endpoint
+            .trim_start_matches("https://")
+            .trim_start_matches("http://");
+
+        // Case 1: Virtual hosted style: https://bucket.endpoint/key
+        let domain = format!("{}.{}", self.bucket, endpoint_host);
+
+        let key = if public_url.contains(&domain) {
+            public_url
+                .split(&domain)
+                .nth(1)
+                .unwrap_or("")
+                .trim_start_matches('/')
+        } else {
+            // Fallback: extract last part (fragile but handles simple cases)
+            public_url.split('/').last().unwrap_or("")
+        };
+
+        if key.is_empty() {
+            return false;
+        }
+
+        let result = self
+            .client
+            .head_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await;
+
+        match result {
+            Ok(_) => true,
+            Err(_) => false,
+        }
     }
 }

@@ -1,5 +1,6 @@
 // src/moments/service/moments_service.rs
 
+use crate::external::digital_ocean::spaces::SpacesService;
 use crate::handler::AppError;
 use crate::moments::dto::{
     CreateMomentRequest, CreateMomentResponse, MomentListResponse, MomentResponse,
@@ -15,18 +16,28 @@ use crate::redis::ValkyQueue;
 pub struct MomentsService {
     repo: MomentsRepository,
     queue: Option<ValkyQueue>,
+    spaces_service: SpacesService,
 }
 
 impl MomentsService {
-    pub fn new(repo: MomentsRepository) -> Self {
-        Self { repo, queue: None }
+    pub fn new(repo: MomentsRepository, spaces_service: SpacesService) -> Self {
+        Self {
+            repo,
+            queue: None,
+            spaces_service,
+        }
     }
 
     /// Create with queue for migration support.
-    pub fn with_queue(repo: MomentsRepository, queue: ValkyQueue) -> Self {
+    pub fn with_queue(
+        repo: MomentsRepository,
+        queue: ValkyQueue,
+        spaces_service: SpacesService,
+    ) -> Self {
         Self {
             repo,
             queue: Some(queue),
+            spaces_service,
         }
     }
 
@@ -264,6 +275,15 @@ impl MomentsService {
                     "asset_url cannot be empty".to_string(),
                 ));
             }
+
+            // Verify file exists in storage
+            if !self.spaces_service.check_file_exists(url.trim()).await {
+                tracing::warn!(url = %url, "Asset URL provided but file not found in storage");
+                return Err(AppError::BadRequest(
+                    "Verify failed: File not found in storage".to_string(),
+                ));
+            }
+
             updates.insert("assetUrl", url.trim());
         }
         if let Some(meta) = request.asset_metadata {

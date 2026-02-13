@@ -22,11 +22,15 @@ use crate::redis::ValkyQueue;
 /// - GET    /:moment_id  - Get single moment
 /// - PATCH  /:moment_id  - Update moment (auth, owner only)
 /// - DELETE /:moment_id  - Delete moment (auth, owner only)
+use crate::external::digital_ocean::spaces::SpacesService;
+
 pub fn routes(db: Database, queue: Option<ValkyQueue>) -> Router {
     let repo = MomentsRepository::new(&db);
+    let spaces_service = SpacesService::new();
+
     let service = match queue {
-        Some(q) => MomentsService::with_queue(repo, q),
-        None => MomentsService::new(repo),
+        Some(q) => MomentsService::with_queue(repo, q, spaces_service),
+        None => MomentsService::new(repo, spaces_service),
     };
     let state = MomentsState { service };
 
@@ -34,8 +38,9 @@ pub fn routes(db: Database, queue: Option<ValkyQueue>) -> Router {
         .route("/register", post(create_moment))
         .route("/", get(get_feed))
         .route("/my", get(get_my_moments))
-        .route("/{moment_id}", get(get_moment))
-        .route("/{moment_id}", patch(update_moment))
-        .route("/{moment_id}", delete(delete_moment))
+        .route(
+            "/:moment_id",
+            get(get_moment).patch(update_moment).delete(delete_moment),
+        )
         .with_state(state)
 }

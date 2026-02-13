@@ -21,7 +21,7 @@ pub struct PresignResponse {
 
 #[instrument(skip(payload))]
 pub async fn generate_presigned_url(Json(payload): Json<PresignRequest>) -> impl IntoResponse {
-    let service = SpacesService::new().await;
+    let service = SpacesService::new();
 
     match service
         .generate_presigned_upload_url(&payload.filename, &payload.content_type)
@@ -56,14 +56,15 @@ pub async fn generate_presigned_url(Json(payload): Json<PresignRequest>) -> impl
                 required_headers.insert(name.to_string(), val_str);
             }
 
-            (
-                StatusCode::OK,
-                Json(PresignResponse {
-                    upload_url: presigned_request.uri().to_string(),
-                    public_url,
-                    required_headers,
-                }),
-            )
+            use crate::handler::ApiResponse;
+
+            let response_data = PresignResponse {
+                upload_url: presigned_request.uri().to_string(),
+                public_url,
+                required_headers,
+            };
+
+            ApiResponse::success(response_data).into_response()
         }
         Err(e) => {
             tracing::error!(error = %e, "Failed to generate presigned URL");
@@ -75,6 +76,7 @@ pub async fn generate_presigned_url(Json(payload): Json<PresignRequest>) -> impl
                     required_headers: HashMap::new(),
                 }),
             )
+                .into_response()
         }
     }
 }
