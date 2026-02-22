@@ -4,6 +4,7 @@ pub mod model;
 pub mod repository;
 pub mod route;
 pub mod service;
+pub mod social_media;
 pub mod worker;
 
 pub use controller::MomentsState;

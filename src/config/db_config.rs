@@ -30,6 +30,8 @@ pub struct DbConfig {
     pub game_leaderboard_config_collection: String,
     /// AI agent models collection name (default: ai_models)
     pub ai_models_collection: String,
+    /// Shared posts collection name (default: shared_posts)
+    pub shared_posts_collection: String,
 }
 
 impl DbConfig {
@@ -76,6 +78,9 @@ impl DbConfig {
 
             ai_models_collection: env::var("AI_MODELS_COLL")
                 .unwrap_or_else(|_| "ai_models".to_string()),
+
+            shared_posts_collection: env::var("SHARED_POSTS_COLL")
+                .unwrap_or_else(|_| "shared_posts".to_string()),
         }
     }
 }
