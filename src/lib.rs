@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod config;
 pub mod content;
 pub mod external;

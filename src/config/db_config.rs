@@ -28,6 +28,8 @@ pub struct DbConfig {
     pub global_leaderboard_collection: String,
     /// Game leaderboard configs collection name (default: store_games_leaderboards)
     pub game_leaderboard_config_collection: String,
+    /// AI agent models collection name (default: ai_models)
+    pub ai_models_collection: String,
 }
 
 impl DbConfig {
@@ -71,6 +73,9 @@ impl DbConfig {
 
             game_leaderboard_config_collection: env::var("GAME_LEADERBOARD_CONFIG_COLL")
                 .unwrap_or_else(|_| "store_games_leaderboards".to_string()),
+
+            ai_models_collection: env::var("AI_MODELS_COLL")
+                .unwrap_or_else(|_| "ai_models".to_string()),
         }
     }
 }

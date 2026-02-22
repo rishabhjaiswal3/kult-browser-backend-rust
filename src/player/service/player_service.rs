@@ -9,12 +9,15 @@ use crate::player::dto::{
 use crate::player::repository::PlayerRepository;
 use mongodb::bson::Document;
 
+use crate::agent::repository::agent_repository::AgentRepository;
+
 /// Service layer for Player operations.
 #[derive(Clone)]
 pub struct PlayerService {
     player_repo: PlayerRepository,
     global_lb_repo: GlobalLeaderboardRepository,
     game_lb_service: GameLeaderboardService,
+    agent_repo: AgentRepository,
 }
 
 impl PlayerService {
@@ -22,11 +25,13 @@ impl PlayerService {
         player_repo: PlayerRepository,
         global_lb_repo: GlobalLeaderboardRepository,
         game_lb_service: GameLeaderboardService,
+        agent_repo: AgentRepository,
     ) -> Self {
         Self {
             player_repo,
             global_lb_repo,
             game_lb_service,
+            agent_repo,
         }
     }
 
@@ -66,6 +71,17 @@ impl PlayerService {
 
         if is_new {
             tracing::info!(wallet = %wallet, name = %name, "New player registered");
+
+            // Automatically generate a Web3 AI Agent identity for this new user
+            if let Err(e) = self.agent_repo.create_agent_for_new_user(&wallet).await {
+                tracing::error!(
+                    error = %e,
+                    wallet = %wallet,
+                    "Failed to generate AI agent for new user during login registration"
+                );
+                // We don't necessarily want to block the user from logging in if agent gen fails,
+                // but we must log it as a critical error.
+            }
         } else {
             tracing::debug!(wallet = %wallet, "Existing player logged in");
         }
