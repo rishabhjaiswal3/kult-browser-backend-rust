@@ -1,4 +1,4 @@
-// src/moments/worker.rs
+// src/moments/worker/migration_worker.rs
 // Singleton MigrationWorker - consumes jobs from Valkey queue
 // Downloads from DO Spaces → uploads to 0G → updates DB
 

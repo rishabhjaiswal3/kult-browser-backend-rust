@@ -2,7 +2,6 @@ use mongodb::{
     bson::{doc, oid::ObjectId},
     Collection,
 };
-use std::sync::Arc;
 
 use super::super::model::{
     platform::Platform,
@@ -11,6 +10,7 @@ use super::super::model::{
 use crate::config::db_config::DbConfig;
 use crate::mongo::connection::connect;
 
+#[derive(Clone)]
 pub struct PostRepository {
     collection: Collection<SharedPost>,
 }

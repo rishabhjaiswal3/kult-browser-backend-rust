@@ -8,7 +8,7 @@ use crate::moments::dto::{
 };
 use crate::moments::model::MomentModel;
 use crate::moments::repository::MomentsRepository;
-use crate::moments::worker::MigrationJob;
+use crate::moments::worker::migration_worker::MigrationJob;
 use crate::redis::ValkyQueue;
 
 /// Service layer for Moment operations.

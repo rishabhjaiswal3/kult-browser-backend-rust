@@ -6,6 +6,7 @@ pub mod bd_config;
 pub mod db_config;
 pub mod do_config;
 pub mod log_config;
+pub mod scrape_config;
 pub mod valkey_config;
 pub mod zg_config;
 
@@ -16,6 +17,7 @@ pub use bd_config::BdConfig;
 pub use db_config::DbConfig;
 pub use do_config::DoConfig;
 pub use log_config::LogConfig;
+pub use scrape_config::ScrapeConfig;
 pub use valkey_config::ValkeyConfig;
 pub use zg_config::ZgConfig;
 
@@ -27,6 +29,7 @@ pub struct Config {
     pub db: DbConfig,
     pub do_spaces: DoConfig,
     pub log: LogConfig,
+    pub scrape: ScrapeConfig,
     pub valkey: ValkeyConfig,
     pub zg: ZgConfig,
 }
@@ -41,6 +44,7 @@ impl Config {
             db: DbConfig::from_env(),
             do_spaces: DoConfig::from_env(),
             log: LogConfig::from_env(),
+            scrape: ScrapeConfig::from_env(),
             valkey: ValkeyConfig::from_env(),
             zg: ZgConfig::from_env(),
         }

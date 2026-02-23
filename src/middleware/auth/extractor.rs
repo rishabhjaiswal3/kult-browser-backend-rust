@@ -3,7 +3,10 @@ use axum::{
     async_trait,
     extract::FromRequestParts,
     http::{request::Parts, StatusCode},
+    response::{IntoResponse, Response},
+    Json,
 };
+use serde_json::json;
 
 /// Authenticated player extracted from JWT token.
 /// Use this as an extractor in protected route handlers.
@@ -26,12 +29,31 @@ pub struct AuthPlayer {
     pub name: String,
 }
 
+/// Structured JSON rejection for auth failures
+pub struct AuthRejection {
+    status: StatusCode,
+    message: String,
+}
+
+impl IntoResponse for AuthRejection {
+    fn into_response(self) -> Response {
+        (
+            self.status,
+            Json(json!({
+                "ok": false,
+                "message": self.message
+            })),
+        )
+            .into_response()
+    }
+}
+
 #[async_trait]
 impl<S> FromRequestParts<S> for AuthPlayer
 where
     S: Send + Sync,
 {
-    type Rejection = (StatusCode, String);
+    type Rejection = AuthRejection;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         // Extract Authorization header
@@ -39,28 +61,30 @@ where
             .headers
             .get("Authorization")
             .and_then(|v| v.to_str().ok())
-            .ok_or((
-                StatusCode::UNAUTHORIZED,
-                "Missing Authorization header".to_string(),
-            ))?;
+            .ok_or(AuthRejection {
+                status: StatusCode::UNAUTHORIZED,
+                message: "Missing Authorization header".to_string(),
+            })?;
 
         // Expect "Bearer <token>"
-        let token = auth_header
-            .strip_prefix("Bearer ")
-            .ok_or((
-                StatusCode::UNAUTHORIZED,
-                "Invalid Authorization header format. Expected: Bearer <token>".to_string(),
-            ))?;
+        let token = auth_header.strip_prefix("Bearer ").ok_or(AuthRejection {
+            status: StatusCode::UNAUTHORIZED,
+            message: "Invalid Authorization header format. Expected: Bearer <token>".to_string(),
+        })?;
 
         // Verify token
-        let claims = AuthService::verify_token(token).map_err(|e| {
-            (StatusCode::UNAUTHORIZED, e)
+        let claims = AuthService::verify_token(token).map_err(|e| AuthRejection {
+            status: StatusCode::UNAUTHORIZED,
+            message: e,
         })?;
 
         // Check expiration (jsonwebtoken does this, but explicit check for clarity)
         let now = chrono::Utc::now().timestamp();
         if claims.exp < now {
-            return Err((StatusCode::UNAUTHORIZED, "Token expired".to_string()));
+            return Err(AuthRejection {
+                status: StatusCode::UNAUTHORIZED,
+                message: "Token expired".to_string(),
+            });
         }
 
         Ok(AuthPlayer {

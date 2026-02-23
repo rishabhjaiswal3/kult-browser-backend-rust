@@ -10,6 +10,8 @@ use crate::content;
 use crate::game;
 use crate::leaderboard;
 use crate::moments;
+use crate::moments::social_media;
+use crate::moments::social_media::worker::scrape_job::SCRAPE_QUEUE;
 use crate::moments::MIGRATION_QUEUE;
 use crate::player;
 use crate::redis::{connect as valkey_connect, ValkyQueue};
@@ -35,18 +37,21 @@ async fn fallback() -> (StatusCode, Json<serde_json::Value>) {
 }
 
 /// Build the application router with all routes
-fn build_router(db: Database) -> Router {
+async fn build_router(db: Database) -> Router {
     let client = db.client().clone();
 
-    // Connect to Valkey for migration queue
-    let migration_queue = match valkey_connect() {
+    // Connect to Valkey for queues
+    let (migration_queue, scrape_queue) = match valkey_connect() {
         Ok(valkey_client) => {
-            tracing::info!("Connected to Valkey for migration queue");
-            Some(ValkyQueue::new(valkey_client, MIGRATION_QUEUE))
+            tracing::info!("Connected to Valkey for queues");
+            (
+                Some(ValkyQueue::new(valkey_client.clone(), MIGRATION_QUEUE)),
+                Some(ValkyQueue::new(valkey_client, SCRAPE_QUEUE)),
+            )
         }
         Err(e) => {
-            tracing::warn!(error = %e, "Valkey not available — migration queue disabled");
-            None
+            tracing::warn!(error = %e, "Valkey not available — queues disabled");
+            (None, None)
         }
     };
 
@@ -87,6 +92,10 @@ fn build_router(db: Database) -> Router {
         .nest("/api/player", player::routes(db.clone(), client))
         .nest("/api/moments", moments::routes(db.clone(), migration_queue))
         .nest(
+            "/api/moments/social-media",
+            social_media::route::routes(scrape_queue).await,
+        )
+        .nest(
             "/api/upload",
             axum::Router::new().route(
                 "/presign",
@@ -100,7 +109,7 @@ fn build_router(db: Database) -> Router {
 
 /// Start the HTTP server
 pub async fn run(db: Database) -> Result<(), std::io::Error> {
-    let app = build_router(db);
+    let app = build_router(db).await;
 
     let host = &CONFIG.app.host;
     let port = CONFIG.app.port;
