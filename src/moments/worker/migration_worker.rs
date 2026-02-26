@@ -2,9 +2,9 @@
 // Singleton MigrationWorker - consumes jobs from Valkey queue
 // Downloads from DO Spaces → uploads to 0G → updates DB
 
-use std::time::Duration;
-
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use tokio::sync::watch;
 
 use crate::external::spaces;
 use crate::external::storage;
@@ -33,49 +33,86 @@ pub const DEAD_LETTER_QUEUE: &str = "moments:dead";
 
 /// Singleton worker that processes migration jobs.
 ///
-/// Only ONE instance of this should exist per process.
+/// Converts to Reliable Queue pattern:
+/// - Polls queue via `pop_async` (BRPOPLPUSH)
+/// - Process: download, upload to 0G, update MongoDB, cleanup
+/// - Unconditionally `ack_async`s the raw payload when done (even on retry/DLQ)
+/// - Listens for shutdown signal to exit gracefully
 pub struct MigrationWorker {
     queue: ValkyQueue,
     repo: MomentsRepository,
     max_retries: u32,
     poll_timeout_secs: u32,
+    shutdown_rx: watch::Receiver<bool>,
 }
 
 impl MigrationWorker {
-    /// Create the worker (call only once).
-    pub fn new(queue: ValkyQueue, repo: MomentsRepository) -> Self {
+    /// Create the worker.
+    pub fn new(
+        queue: ValkyQueue,
+        repo: MomentsRepository,
+        shutdown_rx: watch::Receiver<bool>,
+    ) -> Self {
         Self {
             queue,
             repo,
             max_retries: 3,
             poll_timeout_secs: 5,
+            shutdown_rx,
         }
     }
 
-    /// Run the worker loop. Blocks forever, processing jobs as they come.
-    pub async fn run(&self) {
+    /// Run the worker loop until a shutdown signal is received.
+    pub async fn run(mut self) {
         tracing::info!(
             "MigrationWorker started — listening on queue '{}'",
             MIGRATION_QUEUE
         );
 
+        // On startup, we must recover any jobs that were stuck in the processing queue
+        // due to a previous crash.
+        match self.queue.recover_stalled_jobs().await {
+            Ok(count) if count > 0 => {
+                tracing::info!("Recovered {} stalled jobs from processing queue", count);
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!(error = %e, "Failed to recover stalled jobs"),
+        }
+
         loop {
-            match self.queue.pop::<MigrationJob>(self.poll_timeout_secs) {
-                Ok(Some(job)) => {
-                    tracing::info!(
-                        asset_id = %job.asset_id,
-                        asset_type = %job.asset_type,
-                        attempt = job.attempt,
-                        "Processing migration job"
-                    );
-                    self.process_job(job).await;
+            tokio::select! {
+                // 1. Listen for graceful shutdown
+                _ = self.shutdown_rx.changed() => {
+                    if *self.shutdown_rx.borrow() {
+                        tracing::info!("MigrationWorker received shutdown signal. Exiting gracefully.");
+                        break;
+                    }
                 }
-                Ok(None) => {
-                    // Timeout — no jobs, loop back and wait again
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, "Queue pop error, retrying in 5s");
-                    tokio::time::sleep(Duration::from_secs(5)).await;
+
+                // 2. Poll the queue
+                pop_result = self.queue.pop_async::<MigrationJob>(self.poll_timeout_secs) => {
+                    match pop_result {
+                        Ok(Some((job, raw_data))) => {
+                            tracing::info!(
+                                asset_id = %job.asset_id,
+                                asset_type = %job.asset_type,
+                                attempt = job.attempt,
+                                "Processing migration job"
+                            );
+
+                            self.process_job(job).await;
+
+                            // UNCONDITIONAL ACK: Whether successful, retried, or DLQ'd, the original popped job is done.
+                            if let Err(e) = self.queue.ack_async(&raw_data).await {
+                                tracing::error!(error = %e, "Failed to ACK completed job");
+                            }
+                        }
+                        Ok(None) => continue, // Timeout — no jobs, loop back
+                        Err(e) => {
+                            tracing::error!(error = %e, "Queue pop error, retrying in 5s");
+                            tokio::time::sleep(Duration::from_secs(5)).await;
+                        }
+                    }
                 }
             }
         }
@@ -182,7 +219,7 @@ impl MigrationWorker {
                 attempt = retry_job.attempt,
                 "Retrying migration job"
             );
-            if let Err(e) = self.queue.push(&retry_job) {
+            if let Err(e) = self.queue.push_async(&retry_job).await {
                 tracing::error!(error = %e, "Failed to re-queue job");
             }
         } else {
@@ -193,7 +230,7 @@ impl MigrationWorker {
             );
             // Push to dead-letter queue for manual inspection
             let dlq = ValkyQueue::new(self.queue.connection().clone(), DEAD_LETTER_QUEUE);
-            if let Err(e) = dlq.push(&job) {
+            if let Err(e) = dlq.push_async(&job).await {
                 tracing::error!(error = %e, "Failed to push to dead letter queue");
             }
         }

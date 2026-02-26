@@ -3,6 +3,8 @@ use kult_browser_backend_rust::moments::social_media::worker::{PostScrapeWorker,
 use kult_browser_backend_rust::moments::{MigrationWorker, MomentsRepository, MIGRATION_QUEUE};
 use kult_browser_backend_rust::redis::{connect as valkey_connect, ValkyQueue};
 use kult_browser_backend_rust::{logging, mongo, server};
+use tokio::signal;
+use tokio::sync::watch;
 
 #[tokio::main]
 async fn main() {
@@ -18,27 +20,63 @@ async fn main() {
         }
     };
 
+    // Create a broadcast channel for graceful shutdown
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+    // Setup signal handler for graceful shutdown (Ctrl-C / SIGTERM)
+    tokio::spawn(async move {
+        let ctrl_c = async {
+            signal::ctrl_c()
+                .await
+                .expect("Failed to install Ctrl+C handler");
+        };
+
+        #[cfg(unix)]
+        let terminate = async {
+            signal::unix::signal(signal::unix::SignalKind::terminate())
+                .expect("Failed to install signal handler")
+                .recv()
+                .await;
+        };
+
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = terminate => {},
+        }
+
+        tracing::info!("Shutdown signal received. Initiating graceful shutdown...");
+        let _ = shutdown_tx.send(true);
+    });
+
+    let mut worker_handles = Vec::new();
+
     // Spawn background workers
     match valkey_connect() {
         Ok(valkey_client) => {
             // Migration worker
             let migration_queue = ValkyQueue::new(valkey_client.clone(), MIGRATION_QUEUE);
             let repo = MomentsRepository::new(&db);
-            let worker = MigrationWorker::new(migration_queue, repo);
+            let worker = MigrationWorker::new(migration_queue, repo, shutdown_rx.clone());
 
-            tokio::spawn(async move {
+            let handle = tokio::spawn(async move {
                 worker.run().await;
             });
+            worker_handles.push(handle);
             tracing::info!("Migration worker spawned as background task");
 
             // Post scrape worker
             let scrape_queue = ValkyQueue::new(valkey_client, SCRAPE_QUEUE);
             match PostRepository::new().await {
                 Ok(post_repo) => {
-                    let scrape_worker = PostScrapeWorker::new(scrape_queue, post_repo);
-                    tokio::spawn(async move {
+                    let scrape_worker =
+                        PostScrapeWorker::new(scrape_queue, post_repo, shutdown_rx.clone());
+                    let handle = tokio::spawn(async move {
                         scrape_worker.run().await;
                     });
+                    worker_handles.push(handle);
                     tracing::info!("Post scrape worker spawned as background task");
                 }
                 Err(e) => {
@@ -51,9 +89,16 @@ async fn main() {
         }
     }
 
-    // Start the server - exit if it fails
-    if let Err(e) = server::run(db).await {
+    // Start the server (blocks until shutdown signal is received or crashes)
+    if let Err(e) = server::run(db, shutdown_rx.clone()).await {
         tracing::error!(error = %e, "Server error, shutting down");
-        std::process::exit(1);
     }
+
+    // After server shuts down from signal, wait for background workers to finish in-flight jobs
+    tracing::info!("Waiting for background workers to complete active jobs...");
+    for handle in worker_handles {
+        let _ = handle.await;
+    }
+
+    tracing::info!("All processes successfully shut down. Goodbye!");
 }

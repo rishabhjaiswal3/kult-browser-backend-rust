@@ -94,6 +94,7 @@ impl PostService {
             score: 0,
             is_validated: false,
             validation_status: ValidationStatus::Pending,
+            validation_reason: None,
             last_validated_at: None,
             created_at: now,
             updated_at: now,

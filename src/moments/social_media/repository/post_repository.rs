@@ -72,6 +72,7 @@ impl PostRepository {
         score: u32,
         is_validated: bool,
         validation_status: ValidationStatus,
+        validation_reason: &str,
     ) -> Result<(), mongodb::error::Error> {
         let filter = doc! { "_id": id };
 
@@ -87,6 +88,7 @@ impl PostRepository {
                 "score": score,
                 "is_validated": is_validated,
                 "validation_status": status_str,
+                "validation_reason": validation_reason,
                 "last_validated_at": mongodb::bson::DateTime::from_millis(now.timestamp_millis()),
                 "updated_at": mongodb::bson::DateTime::from_millis(now.timestamp_millis())
             }

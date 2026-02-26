@@ -2,22 +2,24 @@
 //
 // The "brain" of the scrape pipeline.
 // Called by PostScrapeWorker after the 24h gate passes.
-// Dispatches to the correct BrightData scraper based on platform,
-// extracts engagement metrics, validates the post, and updates MongoDB.
+// Dispatches to BrightDataPostScraper.scrape_post() which returns
+// normalized ScrapedPostData, then validates via PostValidator.
 
 use crate::external::bright_data::scrapers::post_scrapers::BrightDataPostScraper;
 use crate::moments::social_media::model::platform::Platform;
 use crate::moments::social_media::model::post_model::ValidationStatus;
 use crate::moments::social_media::repository::post_repository::PostRepository;
+use crate::moments::social_media::service::post_validator::PostValidator;
 use mongodb::bson::oid::ObjectId;
 
-/// Result of scraping a single post
+/// Result of scraping and validating a single post
 #[derive(Debug)]
 pub struct ScrapeResult {
     pub likes: u32,
     pub score: u32,
     pub is_valid: bool,
     pub status: ValidationStatus,
+    pub validation_reason: String,
 }
 
 /// Service that orchestrates scraping and validation for shared posts.
@@ -37,7 +39,11 @@ impl PostScraperService {
 
     /// Scrape a post by platform, validate it, calculate score, and update MongoDB.
     ///
-    /// Returns Ok(ScrapeResult) on success, Err on infrastructure failure.
+    /// Flow:
+    /// 1. `scraper.scrape_post()` — dispatches to BD, returns `ScrapedPostData` (normalized)
+    /// 2. `PostValidator::validate()` — checks hashtags/URLs/text for Kult signals
+    /// 3. Score from likes
+    /// 4. Update MongoDB
     pub async fn scrape_and_validate(
         &self,
         post_db_id: ObjectId,
@@ -51,39 +57,46 @@ impl PostScraperService {
             "Scraping post via BrightData"
         );
 
-        // Step 1: Call the correct BrightData scraper based on platform
-        let scrape_result = self.scrape_by_platform(platform, url).await;
+        // Step 1: Scrape + normalize (BD module handles platform dispatch + field mapping)
+        let scraped = self
+            .scraper
+            .scrape_post(platform, url)
+            .await
+            .map_err(|e| format!("Scrape failed: {}", e))?;
 
-        let result = match scrape_result {
-            Ok(likes) => {
-                tracing::info!(
-                    post_db_id = %post_db_id,
-                    likes = likes,
-                    "Scrape successful — post exists"
-                );
-                ScrapeResult {
-                    likes,
-                    score: Self::calculate_score(likes),
-                    is_valid: true,
-                    status: ValidationStatus::Valid,
-                }
+        // Step 2: Validate (domain layer — checks for Kult hashtags/URLs/text)
+        let (is_kult_post, reason) = PostValidator::validate(&scraped);
+
+        let result = if is_kult_post {
+            tracing::info!(
+                post_db_id = %post_db_id,
+                likes = scraped.likes,
+                reason = %reason,
+                "Post validated as Kult post"
+            );
+            ScrapeResult {
+                likes: scraped.likes,
+                score: Self::calculate_score(scraped.likes),
+                is_valid: true,
+                status: ValidationStatus::Valid,
+                validation_reason: reason.to_string(),
             }
-            Err(e) => {
-                tracing::warn!(
-                    post_db_id = %post_db_id,
-                    error = %e,
-                    "Scrape failed or post not found — marking Invalid"
-                );
-                ScrapeResult {
-                    likes: 0,
-                    score: 0,
-                    is_valid: true, // We DID validate it — it just failed validation
-                    status: ValidationStatus::Invalid,
-                }
+        } else {
+            tracing::warn!(
+                post_db_id = %post_db_id,
+                reason = %reason,
+                "Post is NOT a Kult post"
+            );
+            ScrapeResult {
+                likes: scraped.likes,
+                score: 0,
+                is_valid: true, // We DID validate it — it just failed
+                status: ValidationStatus::Invalid,
+                validation_reason: reason.to_string(),
             }
         };
 
-        // Step 2: Update MongoDB with the scraped data
+        // Step 3: Update MongoDB
         self.repo
             .update_post_metrics(
                 post_db_id,
@@ -91,6 +104,7 @@ impl PostScraperService {
                 result.score,
                 result.is_valid,
                 result.status.clone(),
+                &result.validation_reason,
             )
             .await
             .map_err(|e| format!("Failed to update post metrics: {}", e))?;
@@ -100,55 +114,16 @@ impl PostScraperService {
             likes = result.likes,
             score = result.score,
             status = ?result.status,
+            reason = %result.validation_reason,
             "Post validation complete — MongoDB updated"
         );
 
         Ok(result)
     }
 
-    /// Dispatch to the correct BrightData scraper and extract the likes count.
-    /// Returns Ok(likes) if the post was found, Err if deleted/not found.
-    async fn scrape_by_platform(&self, platform: &Platform, url: &str) -> Result<u32, String> {
-        let urls = vec![url.to_string()];
-
-        match platform {
-            Platform::Twitter => {
-                let posts = self
-                    .scraper
-                    .get_twitter_posts(urls)
-                    .await
-                    .map_err(|e| format!("Twitter scrape failed: {}", e))?;
-                let post = posts.first().ok_or("No Twitter data returned")?;
-                if post.error.is_some() {
-                    return Err(format!("Twitter post error: {:?}", post.error));
-                }
-                Ok(post.likes.unwrap_or(0) as u32)
-            }
-            Platform::Pinterest => {
-                let posts = self
-                    .scraper
-                    .get_pinterest_posts(urls)
-                    .await
-                    .map_err(|e| format!("Pinterest scrape failed: {}", e))?;
-                let post = posts.first().ok_or("No Pinterest data returned")?;
-                if post.error.is_some() {
-                    return Err(format!("Pinterest post error: {:?}", post.error));
-                }
-                Ok(post.likes.unwrap_or(0) as u32)
-            }
-            Platform::Farcaster => {
-                // Farcaster is not yet supported by BrightData
-                tracing::warn!("Farcaster scraping not yet supported — defaulting to 0 likes");
-                Ok(0)
-            }
-        }
-    }
-
     /// Calculate a score from the raw likes count.
     ///
     /// For now this is a simple 1:1 mapping.
-    /// In the future, this can factor in platform weight multipliers,
-    /// time decay, engagement rate, etc.
     fn calculate_score(likes: u32) -> u32 {
         likes
     }

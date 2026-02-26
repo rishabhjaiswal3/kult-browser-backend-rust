@@ -2,6 +2,7 @@ use axum::{http::StatusCode, routing::get, Json, Router};
 use mongodb::Database;
 use serde_json::json;
 use tokio::net::TcpListener;
+use tokio::sync::watch;
 use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
 use tracing::Level;
 
@@ -108,7 +109,10 @@ async fn build_router(db: Database) -> Router {
 }
 
 /// Start the HTTP server
-pub async fn run(db: Database) -> Result<(), std::io::Error> {
+pub async fn run(
+    db: Database,
+    mut shutdown_rx: watch::Receiver<bool>,
+) -> Result<(), std::io::Error> {
     let app = build_router(db).await;
 
     let host = &CONFIG.app.host;
@@ -118,5 +122,11 @@ pub async fn run(db: Database) -> Result<(), std::io::Error> {
     tracing::info!(host = %host, port = %port, "Server starting");
 
     let listener = TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            let _ = shutdown_rx.changed().await;
+            tracing::info!("HTTP Server received shutdown signal.");
+        })
+        .await
 }

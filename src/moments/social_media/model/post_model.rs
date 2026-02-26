@@ -31,6 +31,7 @@ pub struct SharedPost {
     // Validation State
     pub is_validated: bool,
     pub validation_status: ValidationStatus,
+    pub validation_reason: Option<String>,
 
     #[serde(
         default,
