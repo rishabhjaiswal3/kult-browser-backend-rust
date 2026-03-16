@@ -11,6 +11,7 @@ pub mod moments;
 pub mod mongo;
 pub mod player;
 pub mod redis;
+pub mod referral;
 pub mod server;
 pub mod upload;
 

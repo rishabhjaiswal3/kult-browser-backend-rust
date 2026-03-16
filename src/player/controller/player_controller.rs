@@ -15,6 +15,7 @@ pub struct PlayerState {
 /// POST /api/player/login
 pub async fn login(
     State(state): State<PlayerState>,
+    headers: axum::http::header::HeaderMap,
     payload: Result<Json<LoginRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
     let Json(request) = match payload {
@@ -22,7 +23,12 @@ pub async fn login(
         Err(rejection) => return AppError::BadRequest(rejection.body_text()).into_response(),
     };
 
-    match state.player_service.login(request).await {
+    let ip_address = headers
+        .get("x-forwarded-for")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("0.0.0.0");
+
+    match state.player_service.login(request, ip_address).await {
         Ok(data) => ApiResponse::success(data).into_response(),
         Err(e) => e.into_response(),
     }

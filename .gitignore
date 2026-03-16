@@ -22,4 +22,5 @@ KULT_Browser_Dev_Spec_v4.docx.pdf
 
 /data
 
-bin
+# Local-only helper binaries and scratch scripts
+/bin/

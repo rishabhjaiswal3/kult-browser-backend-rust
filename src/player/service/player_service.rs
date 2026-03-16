@@ -11,6 +11,8 @@ use mongodb::bson::Document;
 
 use crate::agent::repository::agent_repository::AgentRepository;
 
+use crate::referral::anti_fraud::AntiFraudService;
+
 /// Service layer for Player operations.
 #[derive(Clone)]
 pub struct PlayerService {
@@ -18,6 +20,7 @@ pub struct PlayerService {
     global_lb_repo: GlobalLeaderboardRepository,
     game_lb_service: GameLeaderboardService,
     agent_repo: AgentRepository,
+    anti_fraud_service: Option<std::sync::Arc<AntiFraudService>>,
 }
 
 impl PlayerService {
@@ -26,18 +29,25 @@ impl PlayerService {
         global_lb_repo: GlobalLeaderboardRepository,
         game_lb_service: GameLeaderboardService,
         agent_repo: AgentRepository,
+        anti_fraud_service: Option<std::sync::Arc<AntiFraudService>>,
     ) -> Self {
         Self {
             player_repo,
             global_lb_repo,
             game_lb_service,
             agent_repo,
+            anti_fraud_service,
         }
     }
 
     /// Handle player login (find or create).
-    pub async fn login(&self, request: LoginRequest) -> Result<LoginResponse, AppError> {
+    pub async fn login(
+        &self,
+        request: LoginRequest,
+        ip_address: &str,
+    ) -> Result<LoginResponse, AppError> {
         let wallet = request.wallet_address.trim().to_lowercase();
+        // ...
         tracing::info!(wallet = %wallet, "Player login attempt");
 
         if wallet.is_empty() {
@@ -71,6 +81,29 @@ impl PlayerService {
 
         if is_new {
             tracing::info!(wallet = %wallet, name = %name, "New player registered");
+
+            // Process referral if one was provided
+            if let Some(ref_code) = request.referral_code {
+                if let Some(fraud_service) = &self.anti_fraud_service {
+                    let player_id_str = player
+                        .id
+                        .map(|oid| oid.to_hex())
+                        .unwrap_or_else(|| wallet.clone());
+
+                    if let Err(e) = fraud_service
+                        .process_referral_signup(&player_id_str, &ref_code, ip_address)
+                        .await
+                    {
+                        tracing::error!(
+                            error = %e,
+                            wallet = %wallet,
+                            "Failed to process referral signup"
+                        );
+                    } else {
+                        tracing::info!(wallet = %wallet, code = %ref_code, "Referral pushed to validation queue");
+                    }
+                }
+            }
 
             // Automatically generate a Web3 AI Agent identity for this new user
             if let Err(e) = self.agent_repo.create_agent_for_new_user(&wallet).await {

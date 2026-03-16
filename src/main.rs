@@ -1,8 +1,13 @@
 use kult_browser_backend_rust::moments::social_media::repository::post_repository::PostRepository;
 use kult_browser_backend_rust::moments::social_media::worker::{PostScrapeWorker, SCRAPE_QUEUE};
 use kult_browser_backend_rust::moments::{MigrationWorker, MomentsRepository, MIGRATION_QUEUE};
+use kult_browser_backend_rust::player::repository::PlayerRepository;
 use kult_browser_backend_rust::redis::{connect as valkey_connect, ValkyQueue};
+use kult_browser_backend_rust::referral::service::ReferralService;
+use kult_browser_backend_rust::referral::worker::EvaluationWorker;
+use kult_browser_backend_rust::referral::VERIFY_QUEUE;
 use kult_browser_backend_rust::{logging, mongo, server};
+use std::sync::Arc;
 use tokio::signal;
 use tokio::sync::watch;
 
@@ -68,7 +73,7 @@ async fn main() {
             tracing::info!("Migration worker spawned as background task");
 
             // Post scrape worker
-            let scrape_queue = ValkyQueue::new(valkey_client, SCRAPE_QUEUE);
+            let scrape_queue = ValkyQueue::new(valkey_client.clone(), SCRAPE_QUEUE);
             match PostRepository::new().await {
                 Ok(post_repo) => {
                     let scrape_worker =
@@ -83,6 +88,18 @@ async fn main() {
                     tracing::warn!(error = %e, "Failed to create PostRepository — scrape worker disabled");
                 }
             }
+
+            // Referral evaluation worker
+            let verify_queue = ValkyQueue::new(valkey_client.clone(), VERIFY_QUEUE);
+            let player_repo = Arc::new(PlayerRepository::new(&db));
+            let referral_service = Arc::new(ReferralService::new(player_repo, valkey_client));
+            let eval_worker = EvaluationWorker::new(verify_queue, referral_service, db.clone());
+            let eval_rx = shutdown_rx.clone();
+            let handle = tokio::spawn(async move {
+                eval_worker.run(eval_rx).await;
+            });
+            worker_handles.push(handle);
+            tracing::info!("Referral evaluation worker spawned as background task");
         }
         Err(e) => {
             tracing::warn!(error = %e, "Valkey not available — background workers disabled");

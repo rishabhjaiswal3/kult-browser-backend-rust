@@ -20,15 +20,24 @@ use crate::agent::repository::agent_repository::AgentRepository;
 /// - POST /login - Login or register a player
 /// - GET /profile - Get player profile (auth required)
 /// - PATCH /name - Update player name (auth required)
-pub fn routes(db: Database, client: Client) -> Router {
+pub fn routes(
+    db: Database,
+    client: Client,
+    anti_fraud_service: Option<std::sync::Arc<crate::referral::anti_fraud::AntiFraudService>>,
+) -> Router {
     let player_repo = PlayerRepository::new(&db);
     let global_lb_repo = GlobalLeaderboardRepository::new(&db);
     let config_repo = GameLeaderboardConfigRepository::new(&db);
     let agent_repo = AgentRepository::new(&db);
     let game_lb_service = GameLeaderboardService::new(config_repo, client);
 
-    let player_service =
-        PlayerService::new(player_repo, global_lb_repo, game_lb_service, agent_repo);
+    let player_service = PlayerService::new(
+        player_repo,
+        global_lb_repo,
+        game_lb_service,
+        agent_repo,
+        anti_fraud_service,
+    );
     let state = PlayerState { player_service };
 
     Router::new()

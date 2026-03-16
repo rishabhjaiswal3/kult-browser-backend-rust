@@ -2,18 +2,23 @@
 
 use serde::{Deserialize, Serialize};
 
-/// POST /api/player/login - Request body
+/// Payload for registering or logging in.
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
-    /// Required: Ethereum wallet address
+    /// The Ethereum wallet address
     #[serde(rename = "walletAddress")]
     pub wallet_address: String,
 
-    /// Optional: Display name (auto-generated if not provided)
+    /// Optional initial display name
     pub name: Option<String>,
 
-    /// Optional: Arbitrary metadata to store
+    /// Optional arbitrary metadata (e.g. avatar)
     pub metadata: Option<serde_json::Value>,
+
+    /// Optional referral code provided by the frontend if they clicked an invite link
+    #[serde(default)]
+    #[serde(rename = "referralCode")]
+    pub referral_code: Option<String>,
 }
 
 /// POST /api/player/login - Response body

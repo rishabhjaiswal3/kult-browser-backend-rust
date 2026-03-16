@@ -4,40 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "seed_games"
-path = "src/bin/seed_games.rs"
-
-[[bin]]
 name = "kult_browser_backend_rust"
 path = "src/main.rs"
-
-[[bin]]
-name = "seed_leaderboard_config"
-path = "src/bin/seed_leaderboard_config.rs"
-
-[[bin]]
-name = "test_fetch_leaderboard"
-path = "src/bin/test_fetch_leaderboard.rs"
-
-[[bin]]
-name = "test_global_leaderboard"
-path = "src/bin/test_global_leaderboard.rs"
-
-[[bin]]
-name = "test_queue_producer"
-path = "src/bin/test_queue_producer.rs"
-
-[[bin]]
-name = "moments_worker"
-path = "src/bin/moments_worker.rs"
-
-[[bin]]
-name = "test_0g_upload"
-path = "src/bin/test_0g_upload.rs"
-
-[[bin]]
-name = "test_do_download"
-path = "src/bin/test_do_download.rs"
 
 [dependencies]
 mongodb = "3.1"
@@ -55,8 +23,9 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
 tower-http = { version = "0.5", features = ["trace", "cors"] }
 nanoid = "0.4"
-redis = "0.27"
+redis = { version = "0.27", features = ["tokio-comp"] }
 reqwest = { version = "0.12", features = ["json"] }
 aws-config = "1.8.13"
 aws-sdk-s3 = "1.122.0"
 alloy = { version = "1.7.3", features = ["signers", "signer-local", "rand"] }
+sha2 = "0.10.9"

@@ -25,6 +25,14 @@ pub struct PlayerModel {
     #[serde(default)]
     pub metadata: Option<mongodb::bson::Document>,
 
+    /// Auto-generated referral code (e.g., "x7B9qz")
+    #[serde(
+        rename = "referralCode",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub referral_code: Option<String>,
+
     /// Timestamps are skipped during deserialization to handle mixed formats
     #[serde(rename = "createdAt", default, skip_deserializing)]
     pub created_at: Option<mongodb::bson::DateTime>,

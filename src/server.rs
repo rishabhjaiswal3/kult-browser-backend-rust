@@ -37,24 +37,58 @@ async fn fallback() -> (StatusCode, Json<serde_json::Value>) {
     )
 }
 
+use crate::referral;
+use std::sync::Arc;
+
 /// Build the application router with all routes
 async fn build_router(db: Database) -> Router {
     let client = db.client().clone();
 
     // Connect to Valkey for queues
-    let (migration_queue, scrape_queue) = match valkey_connect() {
-        Ok(valkey_client) => {
-            tracing::info!("Connected to Valkey for queues");
-            (
-                Some(ValkyQueue::new(valkey_client.clone(), MIGRATION_QUEUE)),
-                Some(ValkyQueue::new(valkey_client, SCRAPE_QUEUE)),
-            )
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "Valkey not available — queues disabled");
-            (None, None)
-        }
-    };
+    let (migration_queue, scrape_queue, anti_fraud_service, ref_app_state, referral_router) =
+        match valkey_connect() {
+            Ok(valkey_client) => {
+                tracing::info!("Connected to Valkey for queues");
+
+                // Queue instances
+                let m_queue = ValkyQueue::new(valkey_client.clone(), MIGRATION_QUEUE);
+                let s_queue = ValkyQueue::new(valkey_client.clone(), SCRAPE_QUEUE);
+                let c_queue = ValkyQueue::new(valkey_client.clone(), referral::CLICK_QUEUE);
+                let v_queue = ValkyQueue::new(valkey_client.clone(), referral::VERIFY_QUEUE);
+
+                // Referral Services
+                let player_repo = Arc::new(player::PlayerRepository::new(&db));
+                let referral_service = Arc::new(referral::service::ReferralService::new(
+                    player_repo,
+                    valkey_client.clone(),
+                ));
+                let click_analytics =
+                    Arc::new(referral::analytics::ClickAnalyticsService::new(c_queue));
+                let anti_fraud = Arc::new(referral::anti_fraud::AntiFraudService::new(
+                    valkey_client,
+                    v_queue,
+                ));
+
+                let ref_app_state = referral::redirect_route::RedirectAppState {
+                    referral_service: referral_service.clone(),
+                    click_analytics,
+                };
+
+                let ref_router = referral::route::router().with_state(referral_service);
+
+                (
+                    Some(m_queue),
+                    Some(s_queue),
+                    Some(anti_fraud),
+                    Some(ref_app_state),
+                    Some(ref_router),
+                )
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "Valkey not available — queues disabled");
+                (None, None, None, None, None)
+            }
+        };
 
     // HTTP request/response tracing middleware
     let trace_layer = TraceLayer::new_for_http()
@@ -82,7 +116,7 @@ async fn build_router(db: Database) -> Router {
             .allow_credentials(true)
     };
 
-    Router::new()
+    let mut router = Router::new()
         .route("/api/health", get(health_check))
         .nest("/api/content", content::routes(db.clone()))
         .nest("/api/games", game::routes(db.clone()))
@@ -90,7 +124,10 @@ async fn build_router(db: Database) -> Router {
             "/api/leaderboard",
             leaderboard::routes(db.clone(), client.clone()),
         )
-        .nest("/api/player", player::routes(db.clone(), client))
+        .nest(
+            "/api/player",
+            player::routes(db.clone(), client, anti_fraud_service),
+        )
         .nest("/api/moments", moments::routes(db.clone(), migration_queue))
         .nest(
             "/api/moments/social-media",
@@ -102,10 +139,17 @@ async fn build_router(db: Database) -> Router {
                 "/presign",
                 axum::routing::post(crate::upload::controller::generate_presigned_url),
             ),
-        )
-        .fallback(fallback)
-        .layer(trace_layer)
-        .layer(cors)
+        );
+
+    // Only mount referral routes if Redis is available
+    if let (Some(state), Some(referral_routes)) = (ref_app_state, referral_router) {
+        let redirect_routes = referral::redirect_route::router().with_state(state);
+        router = router
+            .nest("/api/referral", referral_routes)
+            .nest("/r", redirect_routes);
+    }
+
+    router.fallback(fallback).layer(trace_layer).layer(cors)
 }
 
 /// Start the HTTP server

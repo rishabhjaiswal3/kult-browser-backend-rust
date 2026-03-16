@@ -1,0 +1,1 @@
+web: kult_browser_backend_rust

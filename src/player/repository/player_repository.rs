@@ -99,6 +99,7 @@ impl PlayerRepository {
             wallet_address: normalized_wallet,
             name: name.trim().to_string(),
             metadata,
+            referral_code: None,
             created_at: Some(now),
             updated_at: Some(now),
         };
@@ -253,5 +254,38 @@ impl PlayerRepository {
             .try_collect()
             .await
             .map_err(|e| format!("Failed to collect players: {}", e))
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // REFERRAL OPERATIONS
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Find a player by their referral code
+    pub async fn find_by_referral_code(&self, code: &str) -> Result<Option<PlayerModel>, String> {
+        self.collection
+            .find_one(doc! { "referralCode": code })
+            .await
+            .map_err(|e| format!("Failed to find player by referral code: {}", e))
+    }
+
+    /// Set a player's referral code
+    pub async fn set_referral_code(
+        &self,
+        wallet_address: &str,
+        code: &str,
+    ) -> Result<Option<PlayerModel>, String> {
+        let normalized = wallet_address.trim().to_lowercase();
+
+        let result = self
+            .collection
+            .find_one_and_update(
+                doc! { "walletAddress": &normalized },
+                doc! { "$set": { "referralCode": code } },
+            )
+            .return_document(mongodb::options::ReturnDocument::After)
+            .await
+            .map_err(|e| format!("Failed to update referral code: {}", e))?;
+
+        Ok(result)
     }
 }
