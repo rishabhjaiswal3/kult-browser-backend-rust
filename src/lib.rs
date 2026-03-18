@@ -9,6 +9,7 @@ pub mod logging;
 pub mod middleware;
 pub mod moments;
 pub mod mongo;
+pub mod openapi;
 pub mod player;
 pub mod redis;
 pub mod referral;

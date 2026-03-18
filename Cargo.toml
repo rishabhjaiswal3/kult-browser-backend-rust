@@ -24,8 +24,10 @@ tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
 tower-http = { version = "0.5", features = ["trace", "cors"] }
 nanoid = "0.4"
 redis = { version = "0.27", features = ["tokio-comp"] }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
 aws-config = "1.8.13"
 aws-sdk-s3 = "1.122.0"
 alloy = { version = "1.7.3", features = ["signers", "signer-local", "rand"] }
 sha2 = "0.10.9"
+utoipa = { version = "5", features = ["axum_extras", "chrono"] }
+utoipa-swagger-ui = { version = "8", features = ["axum", "vendored"] }

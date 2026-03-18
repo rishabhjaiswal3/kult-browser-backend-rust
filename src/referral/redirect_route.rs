@@ -22,7 +22,24 @@ pub fn router() -> Router<RedirectAppState> {
 }
 
 /// Public Route - Intercepts the click, logs to queue, and 302 Redirects to frontend
-async fn handle_redirect(
+#[utoipa::path(
+    get,
+    path = "/r/{code}",
+    params(
+        ("code" = String, Path, description = "Referral code")
+    ),
+    responses(
+        (
+            status = 302,
+            description = "Redirect to the referral landing page",
+            headers(
+                ("Location" = String, description = "Resolved redirect target")
+            )
+        )
+    ),
+    tag = "Referral"
+)]
+pub(crate) async fn handle_redirect(
     Path(code): Path<String>,
     State(state): State<RedirectAppState>,
     headers: HeaderMap,

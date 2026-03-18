@@ -1,11 +1,12 @@
 // src/leaderboard/dto/leaderboard_dto.rs
 
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::leaderboard::model::{GlobalLeaderboardModel, LeaderboardEntry};
 
 /// Paginated response for global leaderboard
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GlobalLeaderboardResponse {
     pub entries: Vec<GlobalLeaderboardEntryDto>,
     #[serde(rename = "totalCount")]
@@ -18,7 +19,7 @@ pub struct GlobalLeaderboardResponse {
 }
 
 /// DTO for a single global leaderboard entry
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GlobalLeaderboardEntryDto {
     pub rank: u32,
     #[serde(rename = "walletAddress")]
@@ -39,7 +40,7 @@ impl From<GlobalLeaderboardModel> for GlobalLeaderboardEntryDto {
 }
 
 /// Paginated response for game-specific leaderboard
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GameLeaderboardResponse {
     pub entries: Vec<GameLeaderboardEntryDto>,
     #[serde(rename = "totalCount")]
@@ -52,7 +53,7 @@ pub struct GameLeaderboardResponse {
 }
 
 /// DTO for a single game leaderboard entry
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GameLeaderboardEntryDto {
     pub rank: u32,
     pub player: String,
@@ -60,6 +61,7 @@ pub struct GameLeaderboardEntryDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub level: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Object)]
     pub metadata: Option<serde_json::Value>,
 }
 

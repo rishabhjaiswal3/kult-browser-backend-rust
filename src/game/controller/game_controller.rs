@@ -3,6 +3,7 @@ use crate::handler::{ApiResponse, AppError};
 use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
+use utoipa::IntoParams;
 
 /// Shared state for game endpoints
 #[derive(Clone)]
@@ -10,7 +11,8 @@ pub struct GameState {
     pub game_service: GameService,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct AllGamesQuery {
     pub search: Option<String>,
     pub page: Option<u32>,
@@ -18,6 +20,17 @@ pub struct AllGamesQuery {
 }
 
 /// GET /api/games/all
+#[utoipa::path(
+    get,
+    path = "/api/games/all",
+    params(AllGamesQuery),
+    responses(
+        (status = 200, description = "Paginated game catalog", body = crate::openapi::AllGamesApiResponse),
+        (status = 400, description = "Invalid query parameters", body = crate::openapi::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::openapi::ErrorResponse)
+    ),
+    tag = "Games"
+)]
 pub async fn get_all_games(
     State(state): State<GameState>,
     query: Result<Query<AllGamesQuery>, axum::extract::rejection::QueryRejection>,
@@ -41,6 +54,15 @@ pub async fn get_all_games(
 }
 
 /// GET /api/games/all-categories
+#[utoipa::path(
+    get,
+    path = "/api/games/all-categories",
+    responses(
+        (status = 200, description = "Available game categories", body = crate::openapi::CategoriesApiResponse),
+        (status = 500, description = "Internal server error", body = crate::openapi::ErrorResponse)
+    ),
+    tag = "Games"
+)]
 pub async fn get_all_categories(State(state): State<GameState>) -> Response {
     match state.game_service.get_all_categories().await {
         Ok(data) => ApiResponse::success(data).into_response(),
@@ -49,6 +71,19 @@ pub async fn get_all_categories(State(state): State<GameState>) -> Response {
 }
 
 /// GET /api/games/:identification
+#[utoipa::path(
+    get,
+    path = "/api/games/{identification}",
+    params(
+        ("identification" = String, Path, description = "Game identification slug")
+    ),
+    responses(
+        (status = 200, description = "Single game detail", body = crate::openapi::GameDetailApiResponse),
+        (status = 404, description = "Game not found", body = crate::openapi::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::openapi::ErrorResponse)
+    ),
+    tag = "Games"
+)]
 pub async fn get_game_by_id(
     State(state): State<GameState>,
     Path(identification): Path<String>,

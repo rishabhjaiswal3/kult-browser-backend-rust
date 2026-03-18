@@ -1,16 +1,17 @@
 // src/player/model/player_profile.rs
 
 use serde::Serialize;
+use utoipa::ToSchema;
 
 /// GET /api/player/profile - Full response
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PlayerProfileResponse {
     pub cached: bool,
     pub profile: PlayerProfile,
 }
 
 /// Aggregated player statistics
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PlayerProfile {
     #[serde(rename = "walletAddress")]
     pub wallet_address: String,
@@ -42,7 +43,7 @@ pub struct PlayerProfile {
 }
 
 /// Individual game score breakdown
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct GameScoreEntry {
     /// Game identifier (e.g., "zerogpool")
     pub identification: String,

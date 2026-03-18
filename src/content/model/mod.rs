@@ -1,2 +1,4 @@
 pub mod content_config;
-pub use content_config::{ContentConfig, ContentResponse, ContentType, FieldMapping};
+pub use content_config::{
+    ContentConfig, ContentItem, ContentResponse, ContentType, FieldMapping, MappedContentItem,
+};

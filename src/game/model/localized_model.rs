@@ -1,9 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use utoipa::ToSchema;
 
 // --- Localized Wrapper ---
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(bound = "T: utoipa::ToSchema")]
 pub struct Localized<T> {
     pub default: String,
     #[serde(flatten)]

@@ -3,8 +3,10 @@ use crate::leaderboard::controller::LeaderboardState;
 use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
+use utoipa::IntoParams;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct GlobalLeaderboardParams {
     #[serde(default = "default_page")]
     pub page: u32,
@@ -20,6 +22,17 @@ fn default_page_size() -> u32 {
 }
 
 /// GET /api/leaderboard/global
+#[utoipa::path(
+    get,
+    path = "/api/leaderboard/global",
+    params(GlobalLeaderboardParams),
+    responses(
+        (status = 200, description = "Paginated global leaderboard", body = crate::openapi::GlobalLeaderboardApiResponse),
+        (status = 400, description = "Invalid query parameters", body = crate::openapi::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::openapi::ErrorResponse)
+    ),
+    tag = "Leaderboard"
+)]
 pub async fn get_global_leaderboard(
     State(state): State<LeaderboardState>,
     query: Result<Query<GlobalLeaderboardParams>, axum::extract::rejection::QueryRejection>,
@@ -43,6 +56,15 @@ pub async fn get_global_leaderboard(
 }
 
 /// POST /api/leaderboard/refresh
+#[utoipa::path(
+    post,
+    path = "/api/leaderboard/refresh",
+    responses(
+        (status = 200, description = "Global leaderboard refreshed", body = crate::openapi::RefreshLeaderboardApiResponse),
+        (status = 500, description = "Internal server error", body = crate::openapi::ErrorResponse)
+    ),
+    tag = "Leaderboard"
+)]
 pub async fn refresh_global_leaderboard(State(state): State<LeaderboardState>) -> Response {
     match state.global_service.refresh_global_leaderboard().await {
         Ok(count) => ApiResponse::success(serde_json::json!({

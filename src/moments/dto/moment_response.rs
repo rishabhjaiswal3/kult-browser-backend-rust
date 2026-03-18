@@ -1,9 +1,10 @@
 // src/moments/dto/moment_response.rs
 
 use serde::Serialize;
+use utoipa::ToSchema;
 
 /// Single moment response for API output.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MomentResponse {
     /// Shareable moment ID
@@ -22,6 +23,7 @@ pub struct MomentResponse {
 
     /// Asset metadata
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Object)]
     pub asset_metadata: Option<serde_json::Value>,
 
     /// Original filename
@@ -44,6 +46,7 @@ pub struct MomentResponse {
 
     /// Social media links
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Object)]
     pub social_media_links: Option<serde_json::Value>,
 
     /// Created timestamp (ISO 8601)
@@ -54,7 +57,7 @@ pub struct MomentResponse {
 }
 
 /// Paginated list of moments for feed and player's moments.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MomentListResponse {
     /// List of moments

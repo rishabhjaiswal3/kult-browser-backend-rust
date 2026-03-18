@@ -6,6 +6,7 @@ use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use std::sync::Arc;
+use utoipa::IntoParams;
 
 #[derive(Clone)]
 pub struct ContentState {
@@ -13,15 +14,28 @@ pub struct ContentState {
     pub game_repo: Arc<GameModelRepository>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ContentParams {
-    page: String,
-    section: String,
-    page_num: Option<u32>,
-    page_size: Option<u32>,
+    pub page: String,
+    pub section: String,
+    pub page_num: Option<u32>,
+    pub page_size: Option<u32>,
 }
 
 /// GET /api/content
+#[utoipa::path(
+    get,
+    path = "/api/content",
+    params(ContentParams),
+    responses(
+        (status = 200, description = "Section content payload", body = crate::openapi::ContentApiResponse),
+        (status = 400, description = "Invalid query parameters", body = crate::openapi::ErrorResponse),
+        (status = 404, description = "Configured content section not found", body = crate::openapi::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::openapi::ErrorResponse)
+    ),
+    tag = "Content"
+)]
 pub async fn get_content(
     State(state): State<ContentState>,
     query: Result<Query<ContentParams>, axum::extract::rejection::QueryRejection>,

@@ -35,10 +35,7 @@ impl AuthService {
 
         let claims = JwtClaims {
             sub: player.wallet_address.clone(),
-            player_id: player
-                .id
-                .map(|oid| oid.to_hex())
-                .unwrap_or_default(),
+            player_id: player.id.map(|oid| oid.to_hex()).unwrap_or_default(),
             name: player.name.clone(),
             iat: now.timestamp(),
             exp: exp.timestamp(),

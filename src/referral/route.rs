@@ -11,7 +11,20 @@ pub fn router() -> Router<Arc<ReferralService>> {
 }
 
 /// Protected Route - Gets or generates the referral link for the logged-in player
-async fn get_my_referral_code(
+#[utoipa::path(
+    get,
+    path = "/api/referral/me",
+    security(
+        ("bearer_auth" = [])
+    ),
+    responses(
+        (status = 200, description = "Get or create the authenticated player's referral link", body = crate::openapi::ReferralLinkResponse),
+        (status = 401, description = "Missing or invalid bearer token", body = crate::openapi::ErrorResponse),
+        (status = 500, description = "Referral link generation failed", body = crate::openapi::ReferralErrorResponse)
+    ),
+    tag = "Referral"
+)]
+pub(crate) async fn get_my_referral_code(
     auth_player: AuthPlayer,
     State(service): State<Arc<ReferralService>>,
 ) -> impl IntoResponse {

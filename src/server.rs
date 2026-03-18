@@ -5,6 +5,8 @@ use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
 use tracing::Level;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::config::CONFIG;
 use crate::content;
@@ -18,7 +20,15 @@ use crate::player;
 use crate::redis::{connect as valkey_connect, ValkyQueue};
 
 /// Health check endpoint
-async fn health_check() -> Json<serde_json::Value> {
+#[utoipa::path(
+    get,
+    path = "/api/health",
+    responses(
+        (status = 200, description = "Health check response", body = crate::openapi::HealthResponse)
+    ),
+    tag = "Health"
+)]
+pub(crate) async fn health_check() -> Json<serde_json::Value> {
     Json(json!({
         "ok": true,
         "ts": chrono::Utc::now().to_rfc3339()
@@ -149,7 +159,14 @@ async fn build_router(db: Database) -> Router {
             .nest("/r", redirect_routes);
     }
 
-    router.fallback(fallback).layer(trace_layer).layer(cors)
+    router
+        .merge(
+            SwaggerUi::new("/docs")
+                .url("/api-docs/openapi.json", crate::openapi::ApiDoc::openapi()),
+        )
+        .fallback(fallback)
+        .layer(trace_layer)
+        .layer(cors)
 }
 
 /// Start the HTTP server

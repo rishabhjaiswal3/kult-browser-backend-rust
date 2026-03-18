@@ -3,16 +3,17 @@ use axum::{extract::Json, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::instrument;
+use utoipa::ToSchema;
 
 use crate::external::digital_ocean::spaces::SpacesService;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct PresignRequest {
     pub filename: String,
     pub content_type: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct PresignResponse {
     pub upload_url: String,
     pub public_url: String,
@@ -21,6 +22,20 @@ pub struct PresignResponse {
 
 use crate::middleware::AuthPlayer;
 
+#[utoipa::path(
+    post,
+    path = "/api/upload/presign",
+    security(
+        ("bearer_auth" = [])
+    ),
+    request_body = PresignRequest,
+    responses(
+        (status = 200, description = "Generated a presigned upload URL", body = crate::openapi::PresignApiResponse),
+        (status = 401, description = "Missing or invalid bearer token", body = crate::openapi::ErrorResponse),
+        (status = 500, description = "Failed to generate upload URL", body = PresignResponse)
+    ),
+    tag = "Upload"
+)]
 #[instrument(skip(payload, _auth))]
 pub async fn generate_presigned_url(
     _auth: AuthPlayer,

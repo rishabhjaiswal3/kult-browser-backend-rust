@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// JWT payload claims for player authentication.
-/// 
+///
 /// Industry Standard Fields (RFC 7519):
 /// - `sub`: Subject - the player's wallet address
 /// - `iat`: Issued At - Unix timestamp

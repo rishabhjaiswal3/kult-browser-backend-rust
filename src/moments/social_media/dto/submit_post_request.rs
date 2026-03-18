@@ -1,11 +1,12 @@
 // src/moments/social_media/dto/submit_post_request.rs
 
 use serde::Deserialize;
+use utoipa::ToSchema;
 
 use crate::moments::social_media::model::platform::Platform;
 
-/// Request body for POST /api/moments/social-media/submit
-#[derive(Debug, Deserialize)]
+/// Request body for POST /api/moments/social-media/submit-url
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SubmitPostRequest {
     /// The ID of the moment being shared

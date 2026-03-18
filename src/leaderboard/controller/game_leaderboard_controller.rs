@@ -3,8 +3,10 @@ use crate::leaderboard::controller::LeaderboardState;
 use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
+use utoipa::IntoParams;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct LeaderboardParams {
     #[serde(default = "default_page")]
     pub page: u32,
@@ -20,6 +22,21 @@ fn default_page_size() -> u32 {
 }
 
 /// GET /api/leaderboard/game/:identification
+#[utoipa::path(
+    get,
+    path = "/api/leaderboard/game/{identification}",
+    params(
+        ("identification" = String, Path, description = "Game identification slug"),
+        LeaderboardParams
+    ),
+    responses(
+        (status = 200, description = "Paginated game leaderboard", body = crate::openapi::GameLeaderboardApiResponse),
+        (status = 400, description = "Invalid query parameters", body = crate::openapi::ErrorResponse),
+        (status = 404, description = "Game leaderboard config not found", body = crate::openapi::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::openapi::ErrorResponse)
+    ),
+    tag = "Leaderboard"
+)]
 pub async fn get_game_leaderboard(
     State(state): State<LeaderboardState>,
     Path(identification): Path<String>,

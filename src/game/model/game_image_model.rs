@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 // Single Image Object
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, ToSchema)]
 pub struct ImageObject {
     // Essential
     pub url: String,
@@ -17,7 +18,7 @@ pub struct ImageObject {
 }
 
 // Image with Index (for carousel etc)
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, ToSchema)]
 pub struct IndexedImage {
     pub index: u32,
 
@@ -26,7 +27,7 @@ pub struct IndexedImage {
 }
 
 // image with all possible orientations
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, ToSchema)]
 pub struct OrientedImage {
     // Essential
     pub horizontal: super::Localized<ImageObject>,
@@ -38,7 +39,7 @@ pub struct OrientedImage {
 }
 
 // indexed image with all possible orientations
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, ToSchema)]
 pub struct OrientedImageArray {
     // Essential
     pub horizontal: Vec<IndexedImage>,
@@ -50,7 +51,7 @@ pub struct OrientedImageArray {
 }
 
 /// All game images - generalized
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, ToSchema)]
 pub struct GameImages {
     // Essential
     pub hero: OrientedImage,

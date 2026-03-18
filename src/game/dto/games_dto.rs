@@ -1,11 +1,12 @@
 // src/game/dto/games_dto.rs
 
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::game::model::{Localized, OrientedImage};
 
 /// DTO for a game item in a list (minimal fields for cards/lists)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GameListItemDto {
     pub identification: String,
     pub name: Localized<String>,
@@ -19,7 +20,7 @@ pub struct GameListItemDto {
 }
 
 /// DTO for single game detail view (includes url and more fields)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GameDetailDto {
     pub identification: String,
     pub name: Localized<String>,
@@ -34,7 +35,7 @@ pub struct GameDetailDto {
 }
 
 /// Paginated response for all games list
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AllGamesResponse {
     pub games: Vec<GameListItemDto>,
     #[serde(rename = "totalCount")]
@@ -47,13 +48,13 @@ pub struct AllGamesResponse {
 }
 
 /// Response for all categories
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CategoriesResponse {
     pub categories: Vec<String>,
 }
 
 /// Response wrapper for single game
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GameDetailResponse {
     pub game: GameDetailDto,
 }

@@ -18,6 +18,21 @@ pub struct SocialMediaState {
 
 /// POST /api/moments/social-media/submit-url
 /// Submit a social media post URL for validation (auth required)
+#[utoipa::path(
+    post,
+    path = "/api/moments/social-media/submit-url",
+    security(
+        ("bearer_auth" = [])
+    ),
+    request_body = SubmitPostRequest,
+    responses(
+        (status = 200, description = "Queued social media post validation", body = crate::openapi::SubmitSharedPostApiResponse),
+        (status = 400, description = "Invalid or duplicate post submission", body = crate::openapi::ErrorResponse),
+        (status = 401, description = "Missing or invalid bearer token", body = crate::openapi::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::openapi::ErrorResponse)
+    ),
+    tag = "Social Media"
+)]
 pub async fn submit_post(
     State(state): State<SocialMediaState>,
     auth: AuthPlayer,
