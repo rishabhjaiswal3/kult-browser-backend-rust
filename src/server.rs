@@ -6,7 +6,7 @@ use tokio::sync::watch;
 use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
 use tracing::Level;
 use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
+use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
 
 use crate::config::CONFIG;
 use crate::content;
@@ -127,24 +127,24 @@ async fn build_router(db: Database) -> Router {
     };
 
     let mut router = Router::new()
-        .route("/api/health", get(health_check))
-        .nest("/api/content", content::routes(db.clone()))
-        .nest("/api/games", game::routes(db.clone()))
+        .route("/health", get(health_check))
+        .nest("/content", content::routes(db.clone()))
+        .nest("/games", game::routes(db.clone()))
         .nest(
-            "/api/leaderboard",
+            "/leaderboard",
             leaderboard::routes(db.clone(), client.clone()),
         )
         .nest(
-            "/api/player",
+            "/player",
             player::routes(db.clone(), client, anti_fraud_service),
         )
-        .nest("/api/moments", moments::routes(db.clone(), migration_queue))
+        .nest("/moments", moments::routes(db.clone(), migration_queue))
         .nest(
-            "/api/moments/social-media",
+            "/moments/social-media",
             social_media::route::routes(scrape_queue).await,
         )
         .nest(
-            "/api/upload",
+            "/upload",
             axum::Router::new().route(
                 "/presign",
                 axum::routing::post(crate::upload::controller::generate_presigned_url),
@@ -155,14 +155,15 @@ async fn build_router(db: Database) -> Router {
     if let (Some(state), Some(referral_routes)) = (ref_app_state, referral_router) {
         let redirect_routes = referral::redirect_route::router().with_state(state);
         router = router
-            .nest("/api/referral", referral_routes)
+            .nest("/referral", referral_routes)
             .nest("/r", redirect_routes);
     }
 
     router
         .merge(
             SwaggerUi::new("/docs")
-                .url("/api-docs/openapi.json", crate::openapi::ApiDoc::openapi()),
+                .url("/openapi.json", crate::openapi::ApiDoc::openapi())
+                .config(SwaggerConfig::new(["openapi.json"])),
         )
         .fallback(fallback)
         .layer(trace_layer)
