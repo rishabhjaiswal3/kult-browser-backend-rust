@@ -3,7 +3,6 @@
 use axum::extract::State;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use mongodb::bson::oid::ObjectId;
 
 use crate::handler::{ApiResponse, AppError};
 use crate::middleware::AuthPlayer;
@@ -43,18 +42,10 @@ pub async fn submit_post(
         Err(rejection) => return AppError::BadRequest(rejection.body_text()).into_response(),
     };
 
-    // Parse moment_id from string to ObjectId
-    let moment_id = match ObjectId::parse_str(&request.moment_id) {
-        Ok(id) => id,
-        Err(_) => {
-            return AppError::BadRequest("Invalid moment_id format".to_string()).into_response()
-        }
-    };
-
     match state
         .post_service
         .submit_shared_post(
-            moment_id,
+            request.moment_id,
             auth.wallet_address,
             request.platform,
             request.post_id,

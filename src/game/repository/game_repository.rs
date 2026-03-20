@@ -47,7 +47,7 @@ impl GameModelRepository {
     ) -> Result<Option<GameModel>, mongodb::error::Error> {
         let mut update_doc = doc! {
             "$set": {
-                "updated_at": Utc::now().to_rfc3339()
+                "updated_at": Utc::now()
             }
         };
         // Merge the provided updates into $set
@@ -166,6 +166,7 @@ impl GameModelRepository {
                 doc! {
                     "$or": [
                         { "identification": { "$regex": &pattern } },
+                        { "name": { "$regex": &pattern } },
                         { "name.en": { "$regex": &pattern } },
                         { "name.default": { "$regex": &pattern } },
                         { "category": { "$regex": &pattern } },

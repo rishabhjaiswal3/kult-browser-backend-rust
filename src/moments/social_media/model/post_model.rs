@@ -1,6 +1,6 @@
 use super::platform::Platform;
 use chrono::{DateTime, Utc};
-use mongodb::bson::oid::ObjectId;
+use mongodb::bson::{oid::ObjectId, Bson};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -16,7 +16,7 @@ pub struct SharedPost {
     pub id: Option<ObjectId>,
 
     // Core Relations
-    pub moment_id: ObjectId,
+    pub moment_id: Bson,
     pub wallet_address: String,
 
     // Social Media Data

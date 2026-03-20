@@ -7,11 +7,11 @@ use std::sync::Arc;
 
 pub struct ReferralService {
     player_repo: Arc<PlayerRepository>,
-    redis_client: redis::Client,
+    redis_client: Option<redis::Client>,
 }
 
 impl ReferralService {
-    pub fn new(player_repo: Arc<PlayerRepository>, redis_client: redis::Client) -> Self {
+    pub fn new(player_repo: Arc<PlayerRepository>, redis_client: Option<redis::Client>) -> Self {
         Self {
             player_repo,
             redis_client,
@@ -48,40 +48,33 @@ impl ReferralService {
             .set_referral_code(&normalized_wallet, &new_code)
             .await?;
 
-        // 5. Cache the mapping in Redis `ref:code:{code} -> walletAddress`
-        let mut conn = self
-            .redis_client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(|e| format!("Redis connection error: {}", e))?;
-
         let cache_key = format!("ref:code:{}", new_code);
-        let _: () = conn
-            .set(cache_key, &normalized_wallet)
-            .await
-            .map_err(|e| format!("Failed to cache referral code in Redis: {}", e))?;
+        self.try_cache_referral_code(&cache_key, &normalized_wallet).await;
 
         Ok(new_code)
     }
 
     /// Lookup a wallet address from a given referral code, using Redis cache first, falling back to Mongo.
     pub async fn resolve_code_to_wallet(&self, code: &str) -> Result<Option<String>, String> {
-        let mut conn = self
-            .redis_client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(|e| format!("Redis connection error: {}", e))?;
-
         let cache_key = format!("ref:code:{}", code);
 
-        // 1. Check Redis Cache
-        let cached_wallet: Option<String> = conn
-            .get(&cache_key)
-            .await
-            .map_err(|e| format!("Redis get error: {}", e))?;
+        // 1. Check Redis Cache when available
+        if let Some(redis_client) = &self.redis_client {
+            match redis_client.get_multiplexed_async_connection().await {
+                Ok(mut conn) => {
+                    let cached_wallet: Option<String> = conn.get(&cache_key).await.map_err(|e| {
+                        tracing::warn!(error = %e, code = %code, "Referral cache get failed");
+                        format!("Redis get error: {}", e)
+                    })?;
 
-        if let Some(w) = cached_wallet {
-            return Ok(Some(w));
+                    if let Some(wallet) = cached_wallet {
+                        return Ok(Some(wallet));
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, code = %code, "Referral cache unavailable, falling back to MongoDB");
+                }
+            }
         }
 
         // 2. Cache miss: Fallback to MongoDB
@@ -89,15 +82,37 @@ impl ReferralService {
 
         match player {
             Some(p) => {
-                // Restore cache
-                let _: () = conn
-                    .set(&cache_key, &p.wallet_address)
-                    .await
-                    .map_err(|e| format!("Failed to restore cache: {}", e))?;
+                self.try_cache_referral_code(&cache_key, &p.wallet_address)
+                    .await;
 
                 Ok(Some(p.wallet_address))
             }
             None => Ok(None),
+        }
+    }
+
+    async fn try_cache_referral_code(&self, cache_key: &str, wallet_address: &str) {
+        let Some(redis_client) = &self.redis_client else {
+            return;
+        };
+
+        match redis_client.get_multiplexed_async_connection().await {
+            Ok(mut conn) => {
+                if let Err(e) = conn.set::<_, _, ()>(cache_key, wallet_address).await {
+                    tracing::warn!(
+                        error = %e,
+                        cache_key = %cache_key,
+                        "Failed to cache referral code in Redis"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    cache_key = %cache_key,
+                    "Referral cache connection unavailable"
+                );
+            }
         }
     }
 }

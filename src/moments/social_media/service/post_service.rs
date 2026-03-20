@@ -1,5 +1,5 @@
 use chrono::Utc;
-use mongodb::bson::oid::ObjectId;
+use mongodb::bson::{oid::ObjectId, Bson};
 use std::fmt;
 
 use super::super::{
@@ -66,7 +66,7 @@ impl PostService {
     /// If a queue is configured, a ScrapeJob is automatically pushed for delayed validation.
     pub async fn submit_shared_post(
         &self,
-        moment_id: ObjectId,
+        moment_id: String,
         wallet_address: String,
         platform: Platform,
         post_id: String,
@@ -85,7 +85,7 @@ impl PostService {
 
         let new_post = SharedPost {
             id: None,
-            moment_id,
+            moment_id: Bson::String(moment_id),
             wallet_address,
             platform: platform.clone(),
             post_id,

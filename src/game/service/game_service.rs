@@ -1,9 +1,10 @@
 use crate::game::dto::{
     AllGamesResponse, CategoriesResponse, GameDetailDto, GameDetailResponse, GameListItemDto,
 };
-use crate::game::model::GameModel;
+use crate::game::model::{util, GameModel, Localized};
 use crate::game::repository::GameModelRepository;
 use crate::handler::AppError;
+use serde_json::Value;
 
 /// Service layer for Game operations.
 #[derive(Clone)]
@@ -116,9 +117,150 @@ impl GameService {
             name: game.name,
             url: game.url,
             category: game.category,
-            about: game.about,
+            about: normalize_about(game.about),
             rating: game.rating,
             thumbnail: game.images.hero,
         }
+    }
+}
+
+fn normalize_about(value: Option<Value>) -> Option<Localized<String>> {
+    let value = value?;
+
+    if value.is_null() {
+        return None;
+    }
+
+    if let Ok(localized) = serde_json::from_value::<Localized<String>>(value.clone()) {
+        return Some(localized);
+    }
+
+    if let Some(text) = extract_about_text(&value) {
+        return Some(util::create_localized(text));
+    }
+
+    None
+}
+
+fn extract_about_text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => normalized_text(text),
+        Value::Array(items) => {
+            let sections: Vec<String> = items
+                .iter()
+                .filter_map(extract_about_section)
+                .collect();
+
+            if sections.is_empty() {
+                None
+            } else {
+                Some(sections.join("\n\n"))
+            }
+        }
+        Value::Object(_) => extract_about_section(value),
+        _ => None,
+    }
+}
+
+fn extract_about_section(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => normalized_text(text),
+        Value::Object(map) => {
+            let title = map.get("title").and_then(Value::as_str).and_then(normalized_text);
+
+            let body = map
+                .get("content")
+                .and_then(extract_content_text)
+                .or_else(|| map.get("data").and_then(extract_content_text));
+
+            match (title, body) {
+                (Some(title), Some(body)) => Some(format!("{title}\n{body}")),
+                (Some(title), None) => Some(title),
+                (None, Some(body)) => Some(body),
+                (None, None) => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn extract_content_text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => normalized_text(text),
+        Value::Array(items) => {
+            let lines: Vec<String> = items
+                .iter()
+                .filter_map(|item| item.as_str().and_then(normalized_text))
+                .collect();
+
+            if lines.is_empty() {
+                None
+            } else {
+                Some(lines.join("\n"))
+            }
+        }
+        Value::Object(map) => map.get("data").and_then(extract_content_text),
+        _ => None,
+    }
+}
+
+fn normalized_text(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_about;
+    use crate::game::model::util;
+    use serde_json::json;
+
+    #[test]
+    fn normalizes_rich_text_about_array_into_localized_text() {
+        let about = json!([
+            {
+                "index": 0,
+                "title": "Introduction",
+                "content": {
+                    "type": "paragraph",
+                    "data": "Zero G Pool is a fresh twist on the classic 8 Ball Pool experience."
+                }
+            },
+            {
+                "index": 1,
+                "title": "Features",
+                "content": {
+                    "type": "list",
+                    "data": ["Classic Pool Feel", "Skill-Based"]
+                }
+            }
+        ]);
+
+        let normalized = normalize_about(Some(about)).expect("about should normalize");
+
+        assert_eq!(
+            normalized,
+            util::create_localized(
+                "Introduction\nZero G Pool is a fresh twist on the classic 8 Ball Pool experience.\n\nFeatures\nClassic Pool Feel\nSkill-Based".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn drops_image_only_about_payloads() {
+        let about = json!({
+            "horizontal": {
+                "url": "https://example.com/about-desktop.png"
+            },
+            "vertical": {
+                "url": "https://example.com/about-mobile.png"
+            }
+        });
+
+        assert!(normalize_about(Some(about)).is_none());
     }
 }

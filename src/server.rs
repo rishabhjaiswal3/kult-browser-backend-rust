@@ -53,52 +53,44 @@ use std::sync::Arc;
 /// Build the application router with all routes
 async fn build_router(db: Database) -> Router {
     let client = db.client().clone();
+    let player_repo = Arc::new(player::PlayerRepository::new(&db));
+    let mut anti_fraud_service = None;
+    let mut migration_queue = None;
+    let mut scrape_queue = None;
+    let mut referral_redis_client = None;
+    let mut click_analytics = Arc::new(referral::analytics::ClickAnalyticsService::new(None));
 
     // Connect to Valkey for queues
-    let (migration_queue, scrape_queue, anti_fraud_service, ref_app_state, referral_router) =
-        match valkey_connect() {
-            Ok(valkey_client) => {
-                tracing::info!("Connected to Valkey for queues");
+    match valkey_connect().await {
+        Ok(valkey_client) => {
+            tracing::info!("Connected to Valkey for queues");
 
-                // Queue instances
-                let m_queue = ValkyQueue::new(valkey_client.clone(), MIGRATION_QUEUE);
-                let s_queue = ValkyQueue::new(valkey_client.clone(), SCRAPE_QUEUE);
-                let c_queue = ValkyQueue::new(valkey_client.clone(), referral::CLICK_QUEUE);
-                let v_queue = ValkyQueue::new(valkey_client.clone(), referral::VERIFY_QUEUE);
+            // Queue instances
+            let m_queue = ValkyQueue::new(valkey_client.clone(), MIGRATION_QUEUE);
+            let s_queue = ValkyQueue::new(valkey_client.clone(), SCRAPE_QUEUE);
+            let c_queue = ValkyQueue::new(valkey_client.clone(), referral::CLICK_QUEUE);
+            let v_queue = ValkyQueue::new(valkey_client.clone(), referral::VERIFY_QUEUE);
 
-                // Referral Services
-                let player_repo = Arc::new(player::PlayerRepository::new(&db));
-                let referral_service = Arc::new(referral::service::ReferralService::new(
-                    player_repo,
-                    valkey_client.clone(),
-                ));
-                let click_analytics =
-                    Arc::new(referral::analytics::ClickAnalyticsService::new(c_queue));
-                let anti_fraud = Arc::new(referral::anti_fraud::AntiFraudService::new(
-                    valkey_client,
-                    v_queue,
-                ));
+            migration_queue = Some(m_queue);
+            scrape_queue = Some(s_queue);
+            referral_redis_client = Some(valkey_client.clone());
+            anti_fraud_service = Some(Arc::new(referral::anti_fraud::AntiFraudService::new(
+                valkey_client,
+                v_queue,
+            )));
+            click_analytics = Arc::new(referral::analytics::ClickAnalyticsService::new(Some(
+                c_queue,
+            )));
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "Valkey not available — queues disabled");
+        }
+    }
 
-                let ref_app_state = referral::redirect_route::RedirectAppState {
-                    referral_service: referral_service.clone(),
-                    click_analytics,
-                };
-
-                let ref_router = referral::route::router().with_state(referral_service);
-
-                (
-                    Some(m_queue),
-                    Some(s_queue),
-                    Some(anti_fraud),
-                    Some(ref_app_state),
-                    Some(ref_router),
-                )
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "Valkey not available — queues disabled");
-                (None, None, None, None, None)
-            }
-        };
+    let referral_service = Arc::new(referral::service::ReferralService::new(
+        player_repo,
+        referral_redis_client,
+    ));
 
     // HTTP request/response tracing middleware
     let trace_layer = TraceLayer::new_for_http()
@@ -126,7 +118,7 @@ async fn build_router(db: Database) -> Router {
             .allow_credentials(true)
     };
 
-    let mut router = Router::new()
+    let router = Router::new()
         .route("/health", get(health_check))
         .nest("/content", content::routes(db.clone()))
         .nest("/games", game::routes(db.clone()))
@@ -149,15 +141,17 @@ async fn build_router(db: Database) -> Router {
                 "/presign",
                 axum::routing::post(crate::upload::controller::generate_presigned_url),
             ),
+        )
+        .nest(
+            "/referral",
+            referral::route::router().with_state(referral_service),
+        )
+        .nest(
+            "/r",
+            referral::redirect_route::router().with_state(referral::redirect_route::RedirectAppState {
+                click_analytics,
+            }),
         );
-
-    // Only mount referral routes if Redis is available
-    if let (Some(state), Some(referral_routes)) = (ref_app_state, referral_router) {
-        let redirect_routes = referral::redirect_route::router().with_state(state);
-        router = router
-            .nest("/referral", referral_routes)
-            .nest("/r", redirect_routes);
-    }
 
     router
         .merge(

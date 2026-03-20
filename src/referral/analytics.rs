@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub struct ClickAnalyticsService {
-    click_queue: ValkyQueue,
+    click_queue: Option<ValkyQueue>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -18,7 +18,7 @@ pub struct ClickEvent {
 }
 
 impl ClickAnalyticsService {
-    pub fn new(click_queue: ValkyQueue) -> Self {
+    pub fn new(click_queue: Option<ValkyQueue>) -> Self {
         Self { click_queue }
     }
 
@@ -40,8 +40,12 @@ impl ClickAnalyticsService {
             timestamp: Utc::now(),
         };
 
+        let Some(queue) = self.click_queue.clone() else {
+            tracing::debug!(code = %code, "Referral click queue unavailable; skipping analytics enqueue");
+            return;
+        };
+
         // Fire and forget - don't block the HTTP response if Redis is slow
-        let queue = self.click_queue.clone();
         tokio::spawn(async move {
             if let Err(e) = queue.push_async(&event).await {
                 tracing::error!("Failed to enqueue referral click: {}", e);

@@ -1,7 +1,6 @@
 // src/referral/redirect_route.rs
 
 use crate::referral::analytics::ClickAnalyticsService;
-use crate::referral::service::ReferralService;
 use axum::{
     extract::{Path, State},
     http::header::{HeaderMap, HeaderValue, LOCATION, USER_AGENT},
@@ -13,7 +12,6 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct RedirectAppState {
-    pub referral_service: Arc<ReferralService>,
     pub click_analytics: Arc<ClickAnalyticsService>,
 }
 
