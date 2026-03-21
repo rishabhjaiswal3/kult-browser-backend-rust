@@ -82,10 +82,9 @@ mod tests {
 
     #[test]
     fn deserializes_legacy_string_bson_value() {
-        let localized: Localized<String> = bson::from_bson(bson::Bson::String(
-            "Formula Speed Thrills".to_string(),
-        ))
-        .expect("legacy string should deserialize");
+        let localized: Localized<String> =
+            bson::from_bson(bson::Bson::String("Formula Speed Thrills".to_string()))
+                .expect("legacy string should deserialize");
 
         assert_eq!(
             localized,

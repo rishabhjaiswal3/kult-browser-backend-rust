@@ -1,4 +1,4 @@
-use axum::{http::StatusCode, routing::get, Json, Router};
+use axum::{http::StatusCode, middleware, routing::get, Json, Router};
 use mongodb::Database;
 use serde_json::json;
 use tokio::net::TcpListener;
@@ -118,7 +118,7 @@ async fn build_router(db: Database) -> Router {
             .allow_credentials(true)
     };
 
-    let router = Router::new()
+    let api_router = Router::new()
         .route("/health", get(health_check))
         .nest("/content", content::routes(db.clone()))
         .nest("/games", game::routes(db.clone()))
@@ -148,12 +148,12 @@ async fn build_router(db: Database) -> Router {
         )
         .nest(
             "/r",
-            referral::redirect_route::router().with_state(referral::redirect_route::RedirectAppState {
-                click_analytics,
-            }),
-        );
+            referral::redirect_route::router()
+                .with_state(referral::redirect_route::RedirectAppState { click_analytics }),
+        )
+        .layer(middleware::from_fn(crate::middleware::localize_response));
 
-    router
+    api_router
         .merge(
             SwaggerUi::new("/docs")
                 .url("/openapi.json", crate::openapi::ApiDoc::openapi())

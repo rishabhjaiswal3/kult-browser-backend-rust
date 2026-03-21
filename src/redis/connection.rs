@@ -18,13 +18,16 @@ pub async fn connect() -> Result<Client, String> {
         format!("Valkey connection error: {}", e)
     })?;
 
-    let mut conn = timeout(Duration::from_secs(5), client.get_multiplexed_async_connection())
-        .await
-        .map_err(|_| "Valkey connection timed out".to_string())?
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to establish Valkey connection");
-            format!("Valkey connection error: {}", e)
-        })?;
+    let mut conn = timeout(
+        Duration::from_secs(5),
+        client.get_multiplexed_async_connection(),
+    )
+    .await
+    .map_err(|_| "Valkey connection timed out".to_string())?
+    .map_err(|e| {
+        tracing::error!(error = %e, "Failed to establish Valkey connection");
+        format!("Valkey connection error: {}", e)
+    })?;
 
     let pong: RedisResult<String> = timeout(
         Duration::from_secs(5),

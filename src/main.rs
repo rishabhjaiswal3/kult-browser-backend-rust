@@ -95,8 +95,7 @@ async fn main() {
             // Referral evaluation worker
             let verify_queue = ValkyQueue::new(valkey_client.clone(), VERIFY_QUEUE);
             let player_repo = Arc::new(PlayerRepository::new(&db));
-            let referral_service =
-                Arc::new(ReferralService::new(player_repo, Some(valkey_client)));
+            let referral_service = Arc::new(ReferralService::new(player_repo, Some(valkey_client)));
             let eval_worker = EvaluationWorker::new(verify_queue, referral_service, db.clone());
             let eval_rx = shutdown_rx.clone();
             let handle = tokio::spawn(async move {

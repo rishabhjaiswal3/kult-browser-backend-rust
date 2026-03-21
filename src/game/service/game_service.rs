@@ -146,10 +146,7 @@ fn extract_about_text(value: &Value) -> Option<String> {
     match value {
         Value::String(text) => normalized_text(text),
         Value::Array(items) => {
-            let sections: Vec<String> = items
-                .iter()
-                .filter_map(extract_about_section)
-                .collect();
+            let sections: Vec<String> = items.iter().filter_map(extract_about_section).collect();
 
             if sections.is_empty() {
                 None
@@ -166,7 +163,10 @@ fn extract_about_section(value: &Value) -> Option<String> {
     match value {
         Value::String(text) => normalized_text(text),
         Value::Object(map) => {
-            let title = map.get("title").and_then(Value::as_str).and_then(normalized_text);
+            let title = map
+                .get("title")
+                .and_then(Value::as_str)
+                .and_then(normalized_text);
 
             let body = map
                 .get("content")

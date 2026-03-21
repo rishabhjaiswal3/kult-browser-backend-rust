@@ -49,7 +49,8 @@ impl ReferralService {
             .await?;
 
         let cache_key = format!("ref:code:{}", new_code);
-        self.try_cache_referral_code(&cache_key, &normalized_wallet).await;
+        self.try_cache_referral_code(&cache_key, &normalized_wallet)
+            .await;
 
         Ok(new_code)
     }
@@ -62,10 +63,11 @@ impl ReferralService {
         if let Some(redis_client) = &self.redis_client {
             match redis_client.get_multiplexed_async_connection().await {
                 Ok(mut conn) => {
-                    let cached_wallet: Option<String> = conn.get(&cache_key).await.map_err(|e| {
-                        tracing::warn!(error = %e, code = %code, "Referral cache get failed");
-                        format!("Redis get error: {}", e)
-                    })?;
+                    let cached_wallet: Option<String> =
+                        conn.get(&cache_key).await.map_err(|e| {
+                            tracing::warn!(error = %e, code = %code, "Referral cache get failed");
+                            format!("Redis get error: {}", e)
+                        })?;
 
                     if let Some(wallet) = cached_wallet {
                         return Ok(Some(wallet));
