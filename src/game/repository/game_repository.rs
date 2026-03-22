@@ -1,6 +1,11 @@
 use chrono::Utc;
 use futures::TryStreamExt;
-use mongodb::{bson::doc, options::FindOneAndUpdateOptions, Collection, Database};
+use mongodb::{
+    bson::{doc, Document},
+    options::FindOneAndUpdateOptions,
+    Collection, Database,
+};
+use std::collections::HashSet;
 
 use crate::config::CONFIG;
 use crate::GameModel;
@@ -22,9 +27,10 @@ impl GameModelRepository {
         &self,
         identification: &str,
     ) -> Result<Option<GameModel>, mongodb::error::Error> {
-        self.collection
-            .find_one(doc! { "identification": identification })
-            .await
+        let mut filter = Self::released_filter();
+        filter.insert("identification", identification);
+
+        self.collection.find_one(filter).await
     }
     // Check if a GameModel exists
     pub async fn exists(&self, identification: &str) -> Result<bool, mongodb::error::Error> {
@@ -34,6 +40,35 @@ impl GameModelRepository {
             .await?;
         Ok(count > 0)
     }
+
+    pub async fn find_released_identifications(
+        &self,
+        identifications: &[String],
+    ) -> Result<HashSet<String>, mongodb::error::Error> {
+        if identifications.is_empty() {
+            return Ok(HashSet::new());
+        }
+
+        let values = self
+            .collection
+            .distinct(
+                "identification",
+                doc! {
+                    "identification": { "$in": identifications },
+                    "$or": [
+                        { "isReleased": true },
+                        { "is_released": true }
+                    ]
+                },
+            )
+            .await?;
+
+        Ok(values
+            .into_iter()
+            .filter_map(|value| value.as_str().map(|value| value.to_string()))
+            .collect())
+    }
+
     // Create a new GameModel
     pub async fn create(&self, game_model: &GameModel) -> Result<String, mongodb::error::Error> {
         let result = self.collection.insert_one(game_model).await?;
@@ -148,7 +183,7 @@ impl GameModelRepository {
         use mongodb::options::FindOptions;
 
         // Build filter based on search
-        let filter = match search {
+        let search_filter = match search {
             Some(query) if !query.trim().is_empty() => {
                 // Escape regex special chars manually to avoid regex crate dependency
                 let escaped: String = query
@@ -174,7 +209,19 @@ impl GameModelRepository {
                     ]
                 }
             }
-            _ => doc! {},
+            _ => Document::new(),
+        };
+
+        let released_filter = Self::released_filter();
+        let filter = if search_filter.is_empty() {
+            released_filter
+        } else {
+            doc! {
+                "$and": [
+                    released_filter,
+                    search_filter
+                ]
+            }
         };
 
         // Get total count first
@@ -200,12 +247,30 @@ impl GameModelRepository {
     pub async fn get_distinct_categories(&self) -> Result<Vec<String>, mongodb::error::Error> {
         let categories: Vec<String> = self
             .collection
-            .distinct("category", doc! { "category": { "$ne": null } })
+            .distinct(
+                "category",
+                doc! {
+                    "category": { "$ne": null },
+                    "$or": [
+                        { "isReleased": true },
+                        { "is_released": true }
+                    ]
+                },
+            )
             .await?
             .into_iter()
             .filter_map(|v| v.as_str().map(|s| s.to_string()))
             .collect();
 
         Ok(categories)
+    }
+
+    fn released_filter() -> mongodb::bson::Document {
+        doc! {
+            "$or": [
+                { "isReleased": true },
+                { "is_released": true }
+            ]
+        }
     }
 }

@@ -8,6 +8,7 @@ use kult_browser_backend_rust::mongo::connection;
 use kult_browser_backend_rust::{GameModel, GameModelRepository};
 use mongodb::bson::doc;
 use mongodb::bson::oid::ObjectId;
+use serde_json::json;
 
 #[tokio::test]
 async fn test_game_repository_lifecycle() {
@@ -29,8 +30,9 @@ async fn test_game_repository_lifecycle() {
         platform: "web".to_string(),
         url: "https://example.com/game".to_string(),
         images: GameImages::default(),
+        is_released: true,
         slogan: Some(util::create_localized("A test game".to_string())),
-        about: Some(util::create_localized("Description".to_string())),
+        about: Some(json!(util::create_localized("Description".to_string()))),
         category: Some("Action".to_string()),
         tags: Some(vec!["test".to_string(), "rust".to_string()]),
         rating: Some(4.5),

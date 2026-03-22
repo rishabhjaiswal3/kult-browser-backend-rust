@@ -1,3 +1,4 @@
+use crate::game::repository::GameModelRepository;
 use crate::handler::AppError;
 use crate::leaderboard::dto::{GlobalLeaderboardEntryDto, GlobalLeaderboardResponse};
 use crate::leaderboard::model::GlobalLeaderboardModel;
@@ -13,6 +14,7 @@ pub struct GlobalLeaderboardService {
     config_repo: GameLeaderboardConfigRepository,
     global_repo: GlobalLeaderboardRepository,
     game_service: GameLeaderboardService,
+    game_repo: GameModelRepository,
 }
 
 impl GlobalLeaderboardService {
@@ -20,11 +22,13 @@ impl GlobalLeaderboardService {
         config_repo: GameLeaderboardConfigRepository,
         global_repo: GlobalLeaderboardRepository,
         game_service: GameLeaderboardService,
+        game_repo: GameModelRepository,
     ) -> Self {
         Self {
             config_repo,
             global_repo,
             game_service,
+            game_repo,
         }
     }
 
@@ -97,7 +101,39 @@ impl GlobalLeaderboardService {
             AppError::Internal(format!("Failed to fetch configs: {}", e))
         })?;
 
-        tracing::debug!(game_count = configs.len(), "Fetching scores from all games");
+        let config_ids: Vec<String> = configs
+            .iter()
+            .map(|config| config.identification.clone())
+            .collect();
+
+        let released_ids = self
+            .game_repo
+            .find_released_identifications(&config_ids)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to fetch released games");
+                AppError::Internal(format!("Failed to fetch released games: {}", e))
+            })?;
+
+        let mut released_configs = Vec::new();
+        let mut skipped_ids = Vec::new();
+
+        for config in configs {
+            if released_ids.contains(&config.identification) {
+                released_configs.push(config);
+            } else {
+                skipped_ids.push(config.identification.clone());
+            }
+        }
+
+        tracing::debug!(
+            game_count = released_configs.len(),
+            skipped_unreleased = skipped_ids.len(),
+            skipped_ids = ?skipped_ids,
+            "Fetching scores from released games only"
+        );
+
+        let configs = released_configs;
 
         let mut tasks = Vec::new();
         for config in &configs {

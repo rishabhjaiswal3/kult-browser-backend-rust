@@ -23,6 +23,8 @@ pub struct GameModel {
     #[serde(default)]
     pub url: String,
     pub images: GameImages,
+    #[serde(rename = "isReleased", alias = "is_released", default)]
+    pub is_released: bool,
 
     // Optional
     pub slogan: Option<super::Localized<String>>,

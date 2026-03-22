@@ -1,3 +1,4 @@
+use crate::game::repository::GameModelRepository;
 use axum::{
     routing::{get, post},
     Router,
@@ -23,9 +24,10 @@ use crate::leaderboard::service::{GameLeaderboardService, GlobalLeaderboardServi
 pub fn routes(db: Database, client: Client) -> Router {
     let config_repo = GameLeaderboardConfigRepository::new(&db);
     let global_repo = GlobalLeaderboardRepository::new(&db);
+    let game_repo = GameModelRepository::new(&db);
     let game_service = GameLeaderboardService::new(config_repo.clone(), client);
     let global_service =
-        GlobalLeaderboardService::new(config_repo, global_repo, game_service.clone());
+        GlobalLeaderboardService::new(config_repo, global_repo, game_service.clone(), game_repo);
 
     let state = LeaderboardState {
         game_service,
