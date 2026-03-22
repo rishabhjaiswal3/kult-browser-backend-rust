@@ -8,6 +8,7 @@ use tracing::Level;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
 
+use crate::admin;
 use crate::config::CONFIG;
 use crate::content;
 use crate::game;
@@ -122,6 +123,7 @@ async fn build_router(db: Database) -> Router {
         .route("/health", get(health_check))
         .nest("/content", content::routes(db.clone()))
         .nest("/games", game::routes(db.clone()))
+        .nest("/admin", admin::routes(db.clone()))
         .nest(
             "/leaderboard",
             leaderboard::routes(db.clone(), client.clone()),

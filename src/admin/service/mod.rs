@@ -1,0 +1,3 @@
+mod game_leaderboard_config_service;
+
+pub use game_leaderboard_config_service::GameLeaderboardConfigAdminService;

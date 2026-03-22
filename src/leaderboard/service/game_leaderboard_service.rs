@@ -1,9 +1,9 @@
 use crate::handler::AppError;
 use crate::leaderboard::dto::{GameLeaderboardEntryDto, GameLeaderboardResponse};
-use crate::leaderboard::model::LeaderboardEntry;
+use crate::leaderboard::model::{GameLeaderboardConfig, LeaderboardEntry};
 use crate::leaderboard::repository::GameLeaderboardConfigRepository;
 use futures::stream::TryStreamExt;
-use mongodb::bson::{doc, Document};
+use mongodb::bson::{doc, Bson, Document};
 use mongodb::Client;
 
 #[derive(Clone)]
@@ -48,19 +48,7 @@ impl GameLeaderboardService {
             .await
             .map_err(|e| AppError::Internal(format!("Failed to count documents: {}", e)))?;
 
-        let sort_order = config.order;
-
-        let pipeline = vec![
-            doc! {
-                "$project": {
-                    "player": format!("${}", config.person_key),
-                    "score": format!("${}", config.score_key),
-                }
-            },
-            doc! { "$sort": { "score": sort_order } },
-            doc! { "$skip": skip as i64 },
-            doc! { "$limit": page_size as i64 },
-        ];
+        let pipeline = Self::build_leaderboard_pipeline(&config, skip, page_size);
 
         let mut cursor = collection
             .aggregate(pipeline)
@@ -75,20 +63,8 @@ impl GameLeaderboardService {
             .await
             .map_err(|e| AppError::Internal(e.to_string()))?
         {
-            let player = doc.get_str("player").unwrap_or("unknown").to_string();
-            let score = doc
-                .get_f64("score")
-                .or_else(|_| doc.get_i64("score").map(|s| s as f64))
-                .or_else(|_| doc.get_i32("score").map(|s| s as f64))
-                .unwrap_or(0.0);
-
-            entries.push(GameLeaderboardEntryDto {
-                rank,
-                player,
-                score,
-                level: None,
-                metadata: None,
-            });
+            let entry = Self::entry_from_doc(doc, rank);
+            entries.push(GameLeaderboardEntryDto::from_entry(entry, rank));
             rank += 1;
         }
 
@@ -123,19 +99,7 @@ impl GameLeaderboardService {
         let db = self.client.database(&config.db);
         let collection = db.collection::<Document>(&config.collection);
 
-        let sort_order = config.order;
-
-        let pipeline = vec![
-            doc! {
-                "$project": {
-                    "player": format!("${}", config.person_key),
-                    "score": format!("${}", config.score_key),
-                }
-            },
-            doc! { "$sort": { "score": sort_order } },
-            doc! { "$skip": skip as i64 },
-            doc! { "$limit": limit as i64 },
-        ];
+        let pipeline = Self::build_leaderboard_pipeline(&config, skip, limit);
 
         let mut cursor = collection
             .aggregate(pipeline)
@@ -145,20 +109,7 @@ impl GameLeaderboardService {
         let mut rank = skip + 1;
 
         while let Some(doc) = cursor.try_next().await.map_err(|e| e.to_string())? {
-            let player = doc.get_str("player").unwrap_or("unknown").to_string();
-            let score = doc
-                .get_f64("score")
-                .or_else(|_| doc.get_i64("score").map(|s| s as f64))
-                .or_else(|_| doc.get_i32("score").map(|s| s as f64))
-                .unwrap_or(0.0);
-
-            entries.push(LeaderboardEntry {
-                rank,
-                player,
-                score,
-                level: None,
-                metadata: None,
-            });
+            entries.push(Self::entry_from_doc(doc, rank));
             rank += 1;
         }
 
@@ -222,5 +173,156 @@ impl GameLeaderboardService {
         }
 
         Ok(results)
+    }
+
+    fn build_leaderboard_pipeline(
+        config: &GameLeaderboardConfig,
+        skip: u32,
+        limit: u32,
+    ) -> Vec<Document> {
+        let mut project = doc! {
+            "player": format!("${}", config.person_key),
+            "score": format!("${}", config.score_key),
+        };
+
+        if let Some(metadata_projection) =
+            Self::build_metadata_projection(config.projection.as_deref())
+        {
+            project.insert("metadata", Bson::Document(metadata_projection));
+        }
+
+        vec![
+            doc! { "$project": project },
+            doc! { "$sort": { "score": config.order } },
+            doc! { "$skip": skip as i64 },
+            doc! { "$limit": limit as i64 },
+        ]
+    }
+
+    fn build_metadata_projection(projection: Option<&[String]>) -> Option<Document> {
+        let mut metadata = Document::new();
+
+        for path in projection.unwrap_or(&[]) {
+            let trimmed = path.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let parts: Vec<&str> = trimmed.split('.').filter(|part| !part.is_empty()).collect();
+            if parts.is_empty() {
+                continue;
+            }
+
+            Self::insert_projection_path(&mut metadata, &parts, trimmed);
+        }
+
+        if metadata.is_empty() {
+            None
+        } else {
+            Some(metadata)
+        }
+    }
+
+    fn insert_projection_path(target: &mut Document, parts: &[&str], source_path: &str) {
+        if parts.len() == 1 {
+            target.insert(parts[0], format!("${source_path}"));
+            return;
+        }
+
+        let key = parts[0].to_string();
+        let needs_document = !matches!(target.get(&key), Some(Bson::Document(_)));
+        if needs_document {
+            target.insert(key.clone(), Bson::Document(Document::new()));
+        }
+
+        let nested = target
+            .get_document_mut(&key)
+            .expect("metadata projection branch should be a document");
+        Self::insert_projection_path(nested, &parts[1..], source_path);
+    }
+
+    fn entry_from_doc(doc: Document, rank: u32) -> LeaderboardEntry {
+        let player = doc.get_str("player").unwrap_or("unknown").to_string();
+        let score = doc
+            .get_f64("score")
+            .or_else(|_| doc.get_i64("score").map(|value| value as f64))
+            .or_else(|_| doc.get_i32("score").map(|value| value as f64))
+            .unwrap_or(0.0);
+
+        let metadata = doc
+            .get_document("metadata")
+            .ok()
+            .and_then(|metadata| serde_json::to_value(metadata).ok())
+            .filter(|metadata| {
+                !matches!(metadata, serde_json::Value::Object(object) if object.is_empty())
+            });
+
+        LeaderboardEntry {
+            rank,
+            player,
+            score,
+            level: None,
+            metadata,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GameLeaderboardService;
+    use mongodb::bson::doc;
+
+    #[test]
+    fn builds_nested_metadata_projection_from_config_paths() {
+        let projection = vec![
+            "username".to_string(),
+            "profile.avatar.url".to_string(),
+            " profile.country ".to_string(),
+        ];
+
+        let metadata = GameLeaderboardService::build_metadata_projection(Some(&projection))
+            .expect("metadata projection should exist");
+
+        assert_eq!(metadata.get_str("username").unwrap(), "$username");
+        assert_eq!(
+            metadata
+                .get_document("profile")
+                .unwrap()
+                .get_document("avatar")
+                .unwrap()
+                .get_str("url")
+                .unwrap(),
+            "$profile.avatar.url"
+        );
+        assert_eq!(
+            metadata
+                .get_document("profile")
+                .unwrap()
+                .get_str("country")
+                .unwrap(),
+            "$profile.country"
+        );
+    }
+
+    #[test]
+    fn extracts_projected_metadata_from_aggregation_doc() {
+        let entry = GameLeaderboardService::entry_from_doc(
+            doc! {
+                "player": "0xabc",
+                "score": 42,
+                "metadata": {
+                    "username": "ankur",
+                    "profile": {
+                        "country": "IN"
+                    }
+                }
+            },
+            1,
+        );
+
+        assert_eq!(entry.player, "0xabc");
+        assert_eq!(entry.score, 42.0);
+        assert_eq!(entry.metadata.as_ref().unwrap()["username"], "ankur");
+        assert_eq!(entry.metadata.as_ref().unwrap()["profile"]["country"], "IN");
     }
 }
