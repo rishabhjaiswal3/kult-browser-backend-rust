@@ -34,7 +34,8 @@ pub async fn download_file(do_url: &str) -> Result<DownloadResult, String> {
     let tmp_dir = Path::new(&CONFIG.do_spaces.download_tmp_dir);
     std::fs::create_dir_all(tmp_dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;
 
-    let local_path = tmp_dir.join(&filename);
+    // Prefix with a random ID so concurrent jobs for identical filenames do not collide.
+    let local_path = tmp_dir.join(format!("{}_{}", nanoid::nanoid!(), filename));
 
     // Download using async reqwest
     let response = reqwest::get(do_url)

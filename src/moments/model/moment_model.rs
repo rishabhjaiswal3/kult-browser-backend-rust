@@ -64,10 +64,10 @@ pub struct MomentModel {
     pub social_media_links: Option<mongodb::bson::Document>,
 
     /// Timestamps
-    #[serde(rename = "createdAt", default, skip_deserializing)]
+    #[serde(rename = "createdAt", default)]
     pub created_at: Option<mongodb::bson::DateTime>,
 
-    #[serde(rename = "updatedAt", default, skip_deserializing)]
+    #[serde(rename = "updatedAt", default)]
     pub updated_at: Option<mongodb::bson::DateTime>,
 }
 

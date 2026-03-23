@@ -1,11 +1,16 @@
 // src/moments/social_media/service/post_validator.rs
 //
 // Kult-specific post validation.
-// Checks whether a scraped post is about Kult using three methods:
-// 1. Hashtag match (#kultgames)
-// 2. URL match in dedicated fields (kult.games)
-// 3. Regex on text content (kult.games URL or @kultgames mention)
+// Checks whether a scraped post matches the configured validation terms using
+// three methods:
+// 1. Hashtag match
+// 2. URL match in dedicated fields
+// 3. Text-content match
+//
+// The keywords themselves are declared in `CONFIG.scrape.validation_terms`,
+// loaded from `SCRAPE_VALIDATION_TERMS` in `src/config/scrape_config.rs`.
 
+use crate::config::CONFIG;
 use crate::external::bright_data::scrapers::scraped_post::ScrapedPostData;
 
 /// Kult post validator.
@@ -71,39 +76,50 @@ impl PostValidator {
         (false, ValidationReason::NoMatch)
     }
 
-    /// Method 1: Check `hashtags[]` for "kultgames" or "kult.games" (already lowercased by normalizer)
+    fn validation_terms() -> &'static [String] {
+        &CONFIG.scrape.validation_terms
+    }
+
+    /// Method 1: Check `hashtags[]` using the configured validation terms.
+    ///
+    /// These terms are declared in `CONFIG.scrape.validation_terms`.
     fn check_hashtags(post: &ScrapedPostData) -> Option<ValidationReason> {
         for tag in &post.hashtags {
             let tag_lower = tag.to_lowercase();
-            if tag_lower == "kultgames" || tag_lower == "kult.games" || tag_lower == "kult" {
-                return Some(ValidationReason::Hashtag(tag.clone()));
+            for term in Self::validation_terms() {
+                if tag_lower.contains(term) {
+                    return Some(ValidationReason::Hashtag(tag.clone()));
+                }
             }
         }
         None
     }
 
-    /// Method 2: Check `external_urls[]` for "kult.games"
+    /// Method 2: Check `external_urls[]` using the configured validation terms.
+    ///
+    /// These terms are declared in `CONFIG.scrape.validation_terms`.
     fn check_url_fields(post: &ScrapedPostData) -> Option<ValidationReason> {
         for url in &post.external_urls {
-            if url.contains("kult.games") {
-                return Some(ValidationReason::UrlField(url.clone()));
+            let url_lower = url.to_lowercase();
+            for term in Self::validation_terms() {
+                if url_lower.contains(term) {
+                    return Some(ValidationReason::UrlField(url.clone()));
+                }
             }
         }
         None
     }
 
-    /// Method 3: Regex on `text_content` for kult.games URL or @kultgames mention
+    /// Method 3: Check `text_content` using the configured validation terms.
+    ///
+    /// These terms are declared in `CONFIG.scrape.validation_terms`.
     fn check_text_content(post: &ScrapedPostData) -> Option<ValidationReason> {
         let text = post.text_content.to_lowercase();
 
-        // Check for kult.games URL
-        if text.contains("kult.games") {
-            return Some(ValidationReason::TextRegex("kult.games".to_string()));
-        }
-
-        // Check for @kultgames mention
-        if text.contains("@kultgames") {
-            return Some(ValidationReason::TextRegex("@kultgames".to_string()));
+        for term in Self::validation_terms() {
+            if text.contains(term) {
+                return Some(ValidationReason::TextRegex(term.clone()));
+            }
         }
 
         None

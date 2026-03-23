@@ -27,6 +27,8 @@ pub struct SocialMediaState {
     responses(
         (status = 200, description = "Queued social media post validation", body = crate::openapi::SubmitSharedPostApiResponse),
         (status = 400, description = "Invalid or duplicate post submission", body = crate::openapi::ErrorResponse),
+        (status = 403, description = "Moment is not owned by the authenticated player", body = crate::openapi::ErrorResponse),
+        (status = 404, description = "Moment not found", body = crate::openapi::ErrorResponse),
         (status = 401, description = "Missing or invalid bearer token", body = crate::openapi::ErrorResponse),
         (status = 500, description = "Internal server error", body = crate::openapi::ErrorResponse)
     ),
@@ -61,6 +63,13 @@ pub async fn submit_post(
         Err(PostServiceError::DuplicatePost) => {
             AppError::BadRequest("This post has already been submitted".to_string()).into_response()
         }
+        Err(PostServiceError::MomentNotFound) => {
+            AppError::NotFound("Moment not found".to_string()).into_response()
+        }
+        Err(PostServiceError::ForbiddenMomentAccess) => AppError::Forbidden(
+            "You can only submit posts for your own moments".to_string(),
+        )
+        .into_response(),
         Err(e) => {
             tracing::error!(error = %e, "Failed to submit shared post");
             AppError::Internal(e.to_string()).into_response()

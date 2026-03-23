@@ -1,6 +1,7 @@
 // src/referral/service.rs
 
 use crate::player::repository::PlayerRepository;
+use crate::redis::keys::referral_code_cache_key;
 use nanoid::nanoid;
 use redis::AsyncCommands;
 use std::sync::Arc;
@@ -48,7 +49,7 @@ impl ReferralService {
             .set_referral_code(&normalized_wallet, &new_code)
             .await?;
 
-        let cache_key = format!("ref:code:{}", new_code);
+        let cache_key = referral_code_cache_key(&new_code);
         self.try_cache_referral_code(&cache_key, &normalized_wallet)
             .await;
 
@@ -57,7 +58,7 @@ impl ReferralService {
 
     /// Lookup a wallet address from a given referral code, using Redis cache first, falling back to Mongo.
     pub async fn resolve_code_to_wallet(&self, code: &str) -> Result<Option<String>, String> {
-        let cache_key = format!("ref:code:{}", code);
+        let cache_key = referral_code_cache_key(code);
 
         // 1. Check Redis Cache when available
         if let Some(redis_client) = &self.redis_client {

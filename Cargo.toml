@@ -7,6 +7,30 @@ edition = "2021"
 name = "kult_browser_backend_rust"
 path = "src/main.rs"
 
+[[bin]]
+name = "test_bright_data"
+path = "bin/test/test_bright_data.rs"
+
+[[bin]]
+name = "test_post_verification"
+path = "bin/test/test_post_verification.rs"
+
+[[bin]]
+name = "test_full_scrape_pipeline"
+path = "bin/test/test_full_scrape_pipeline.rs"
+
+[[bin]]
+name = "test_0g_upload"
+path = "bin/test/test_0g_upload.rs"
+
+[[bin]]
+name = "test_moment_migration_pipeline"
+path = "bin/test/test_moment_migration_pipeline.rs"
+
+[[bin]]
+name = "test_prod_flow"
+path = "bin/test/test_prod_flow.rs"
+
 [dependencies]
 mongodb = "3.1"
 tokio = { version = "1", features = ["full"] }

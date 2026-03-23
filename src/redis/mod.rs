@@ -1,4 +1,5 @@
 pub mod connection;
+pub mod keys;
 pub mod queue;
 
 pub use connection::connect;

@@ -10,6 +10,7 @@ use super::super::{
     repository::post_repository::PostRepository,
     worker::scrape_job::ScrapeJob,
 };
+use crate::moments::repository::MomentsRepository;
 use crate::redis::ValkyQueue;
 
 /// Errors that can occur when submitting a shared post
@@ -17,6 +18,10 @@ use crate::redis::ValkyQueue;
 pub enum PostServiceError {
     /// The same post_id + platform combination was already submitted
     DuplicatePost,
+    /// Referenced moment does not exist
+    MomentNotFound,
+    /// Authenticated wallet does not own the referenced moment
+    ForbiddenMomentAccess,
     /// A database or infrastructure error
     Database(String),
 }
@@ -25,6 +30,10 @@ impl fmt::Display for PostServiceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::DuplicatePost => write!(f, "This post has already been submitted"),
+            Self::MomentNotFound => write!(f, "Moment not found"),
+            Self::ForbiddenMomentAccess => {
+                write!(f, "You can only submit posts for your own moments")
+            }
             Self::Database(msg) => write!(f, "Database error: {}", msg),
         }
     }
@@ -38,27 +47,32 @@ impl From<mongodb::error::Error> for PostServiceError {
 
 #[derive(Clone)]
 pub struct PostService {
-    repository: PostRepository,
+    post_repository: PostRepository,
+    moments_repository: MomentsRepository,
     queue: Option<ValkyQueue>,
 }
 
 impl PostService {
     /// Create without queue (for tests or when queue is not available).
-    pub async fn new() -> Result<Self, mongodb::error::Error> {
-        let repository = PostRepository::new().await?;
-        Ok(Self {
-            repository,
+    pub fn new(post_repository: PostRepository, moments_repository: MomentsRepository) -> Self {
+        Self {
+            post_repository,
+            moments_repository,
             queue: None,
-        })
+        }
     }
 
     /// Create with queue for production use — scrape jobs will be pushed automatically.
-    pub async fn with_queue(queue: ValkyQueue) -> Result<Self, mongodb::error::Error> {
-        let repository = PostRepository::new().await?;
-        Ok(Self {
-            repository,
+    pub fn with_queue(
+        post_repository: PostRepository,
+        moments_repository: MomentsRepository,
+        queue: ValkyQueue,
+    ) -> Self {
+        Self {
+            post_repository,
+            moments_repository,
             queue: Some(queue),
-        })
+        }
     }
 
     /// Submits a post representing a player sharing a moment.
@@ -72,9 +86,25 @@ impl PostService {
         post_id: String,
         url: String,
     ) -> Result<ObjectId, PostServiceError> {
+        let moment_id = moment_id.trim().to_string();
+        let wallet_address = wallet_address.trim().to_lowercase();
+        let post_id = post_id.trim().to_string();
+        let url = url.trim().to_string();
+
+        let moment = self
+            .moments_repository
+            .find_by_moment_id(&moment_id)
+            .await
+            .map_err(PostServiceError::Database)?
+            .ok_or(PostServiceError::MomentNotFound)?;
+
+        if moment.player_wallet_address != wallet_address {
+            return Err(PostServiceError::ForbiddenMomentAccess);
+        }
+
         // First check if this post id was already submitted for this platform
         if let Some(_existing) = self
-            .repository
+            .post_repository
             .get_post_by_platform_and_id(platform.clone(), &post_id)
             .await?
         {
@@ -100,7 +130,7 @@ impl PostService {
             updated_at: now,
         };
 
-        let inserted_id = self.repository.create_post(new_post).await?;
+        let inserted_id = self.post_repository.create_post(new_post).await?;
 
         // Push scrape job to queue for delayed validation
         if let Some(ref queue) = self.queue {
@@ -112,7 +142,7 @@ impl PostService {
                 attempt: 1,
             };
 
-            match queue.push(&scrape_job) {
+            match queue.push_async(&scrape_job).await {
                 Ok(_) => {
                     tracing::info!(
                         post_db_id = %inserted_id,

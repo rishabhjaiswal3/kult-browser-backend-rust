@@ -1,12 +1,12 @@
 // src/moments/social_media/worker/post_scrape_worker.rs
 // Singleton PostScrapeWorker - consumes ScrapeJobs from Valkey queue
-// Enforces 24h delay window, then scrapes and validates posts
+// Enforces a configurable delay window, then scrapes and validates posts
 
 use chrono::Utc;
 use std::time::Duration;
 use tokio::sync::watch;
 
-use super::scrape_job::{ScrapeJob, SCRAPE_DEAD_LETTER, SCRAPE_QUEUE};
+use super::scrape_job::ScrapeJob;
 use crate::config::CONFIG;
 use crate::moments::social_media::repository::post_repository::PostRepository;
 use crate::moments::social_media::service::post_scraper_service::PostScraperService;
@@ -43,8 +43,8 @@ impl PostScrapeWorker {
     /// Run the worker loop until a shutdown signal is received.
     pub async fn run(mut self) {
         tracing::info!(
-            queue = SCRAPE_QUEUE,
-            min_age_hours = CONFIG.scrape.min_age_hours,
+            queue = %self.queue.queue_name(),
+            min_age_secs = CONFIG.scrape.min_age_secs,
             max_retries = CONFIG.scrape.max_retries,
             "PostScrapeWorker started"
         );
@@ -98,11 +98,11 @@ impl PostScrapeWorker {
     async fn handle_popped_job(&self, job: ScrapeJob, raw_data: &str) {
         let age = Utc::now() - job.created_at;
 
-        if age.num_hours() < CONFIG.scrape.min_age_hours {
-            let remaining = CONFIG.scrape.min_age_hours - age.num_hours();
+        if age.num_seconds() < CONFIG.scrape.min_age_secs {
+            let remaining = CONFIG.scrape.min_age_secs - age.num_seconds();
             tracing::info!(
                 post_db_id = %job.post_db_id,
-                remaining_hours = remaining,
+                remaining_secs = remaining,
                 "Post too young — re-queuing for later"
             );
 
@@ -166,12 +166,13 @@ impl PostScrapeWorker {
                 tracing::error!(error = %e, "Failed to re-queue job");
             }
         } else {
+            let dlq_name = format!("{}:dead_letter", self.queue.queue_name());
             tracing::error!(
                 post_db_id = %job.post_db_id,
                 attempts = job.attempt,
                 "Job failed after max retries — sending to dead letter queue"
             );
-            let dlq = ValkyQueue::new(self.queue.connection().clone(), SCRAPE_DEAD_LETTER);
+            let dlq = ValkyQueue::new(self.queue.connection().clone(), &dlq_name);
             if let Err(e) = dlq.push_async(&job).await {
                 tracing::error!(error = %e, "Failed to push to dead letter queue");
             }

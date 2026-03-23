@@ -8,5 +8,5 @@ pub mod route;
 pub mod service;
 pub mod worker;
 
-pub const CLICK_QUEUE: &str = "referrals:clicks";
-pub const VERIFY_QUEUE: &str = "referrals:pending_checks";
+pub use crate::redis::keys::REFERRAL_CLICK_QUEUE as CLICK_QUEUE;
+pub use crate::redis::keys::REFERRAL_VERIFY_QUEUE as VERIFY_QUEUE;

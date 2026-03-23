@@ -1,6 +1,7 @@
 // src/referral/anti_fraud.rs
 
 use crate::redis::ValkyQueue;
+use crate::redis::keys::referral_signup_ip_key;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -44,7 +45,7 @@ impl AntiFraudService {
             .await
             .map_err(|e| format!("Redis connection error: {}", e))?;
 
-        let collision_key = format!("signup_ip:{}", ip_hash);
+        let collision_key = referral_signup_ip_key(&ip_hash);
 
         // 2. The 1-Hour Freeze (SETNX algorithm)
         // Set the key ONLY if it does not exist, with a 3600 second (1 hour) TTL

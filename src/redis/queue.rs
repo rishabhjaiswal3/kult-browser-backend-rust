@@ -23,7 +23,7 @@ impl ValkyQueue {
         Self {
             client,
             queue_name: queue_name.to_string(),
-            processing_queue_name: format!("{}_processing", queue_name),
+            processing_queue_name: format!("{}:processing", queue_name),
         }
     }
 
@@ -37,6 +37,11 @@ impl ValkyQueue {
     /// Get a reference to the underlying client.
     pub fn connection(&self) -> &Client {
         &self.client
+    }
+
+    /// Get the queue name.
+    pub fn queue_name(&self) -> &str {
+        &self.queue_name
     }
 
     // ─── ASYNC METHODS (Non-blocking, use these in Tokio context) ───

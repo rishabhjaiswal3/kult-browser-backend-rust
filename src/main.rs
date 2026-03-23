@@ -65,7 +65,7 @@ async fn main() {
     match valkey_connect().await {
         Ok(valkey_client) => {
             // Migration worker
-            let migration_queue = ValkyQueue::new(valkey_client.clone(), MIGRATION_QUEUE);
+            let migration_queue = ValkyQueue::new(valkey_client.clone(), MIGRATION_QUEUE.as_str());
             let repo = MomentsRepository::new(&db);
             let worker = MigrationWorker::new(migration_queue, repo, shutdown_rx.clone());
 
@@ -76,24 +76,18 @@ async fn main() {
             tracing::info!("Migration worker spawned as background task");
 
             // Post scrape worker
-            let scrape_queue = ValkyQueue::new(valkey_client.clone(), SCRAPE_QUEUE);
-            match PostRepository::new().await {
-                Ok(post_repo) => {
-                    let scrape_worker =
-                        PostScrapeWorker::new(scrape_queue, post_repo, shutdown_rx.clone());
-                    let handle = tokio::spawn(async move {
-                        scrape_worker.run().await;
-                    });
-                    worker_handles.push(handle);
-                    tracing::info!("Post scrape worker spawned as background task");
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "Failed to create PostRepository — scrape worker disabled");
-                }
-            }
+            let scrape_queue = ValkyQueue::new(valkey_client.clone(), SCRAPE_QUEUE.as_str());
+            let post_repo = PostRepository::new(&db);
+            let scrape_worker =
+                PostScrapeWorker::new(scrape_queue, post_repo, shutdown_rx.clone());
+            let handle = tokio::spawn(async move {
+                scrape_worker.run().await;
+            });
+            worker_handles.push(handle);
+            tracing::info!("Post scrape worker spawned as background task");
 
             // Referral evaluation worker
-            let verify_queue = ValkyQueue::new(valkey_client.clone(), VERIFY_QUEUE);
+            let verify_queue = ValkyQueue::new(valkey_client.clone(), VERIFY_QUEUE.as_str());
             let player_repo = Arc::new(PlayerRepository::new(&db));
             let referral_service = Arc::new(ReferralService::new(player_repo, Some(valkey_client)));
             let eval_worker = EvaluationWorker::new(verify_queue, referral_service, db.clone());

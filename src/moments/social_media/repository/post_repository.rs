@@ -1,6 +1,6 @@
 use mongodb::{
     bson::{doc, oid::ObjectId},
-    Collection,
+    Collection, Database,
 };
 
 use super::super::model::{
@@ -8,7 +8,6 @@ use super::super::model::{
     post_model::{SharedPost, ValidationStatus},
 };
 use crate::config::db_config::DbConfig;
-use crate::mongo::connection::connect;
 
 #[derive(Clone)]
 pub struct PostRepository {
@@ -16,12 +15,11 @@ pub struct PostRepository {
 }
 
 impl PostRepository {
-    pub async fn new() -> Result<Self, mongodb::error::Error> {
-        let db: mongodb::Database = connect().await?;
+    pub fn new(db: &Database) -> Self {
         // The collection will be strictly named `shared_posts` in MongoDB
         let config = DbConfig::from_env();
         let collection = db.collection::<SharedPost>(&config.shared_posts_collection);
-        Ok(Self { collection })
+        Self { collection }
     }
 
     /// Inserts a new shared post into the database.

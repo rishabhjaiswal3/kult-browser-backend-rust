@@ -30,7 +30,8 @@ pub struct FeedQuery {
 }
 
 /// Query parameters for the authenticated player's moments.
-#[derive(Debug, IntoParams)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[serde(rename_all = "camelCase")]
 #[into_params(parameter_in = Query, rename_all = "camelCase")]
 pub struct MyMomentsQuery {
     pub page: Option<u32>,
@@ -140,11 +141,14 @@ pub async fn get_feed(
 pub async fn get_my_moments(
     State(state): State<MomentsState>,
     auth: AuthPlayer,
-    Query(query): Query<FeedQuery>,
+    Query(query): Query<MyMomentsQuery>,
 ) -> Response {
+    let page = query.page.unwrap_or_else(default_page);
+    let per_page = query.per_page.unwrap_or_else(default_per_page);
+
     match state
         .service
-        .get_player_moments(&auth.wallet_address, query.page, query.per_page)
+        .get_player_moments(&auth.wallet_address, page, per_page)
         .await
     {
         Ok(data) => ApiResponse::success(data).into_response(),

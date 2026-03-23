@@ -70,6 +70,19 @@ impl MomentsService {
                 "cannot have more than 10 tags".to_string(),
             ));
         }
+        if let Some(asset_url) = request.asset_url.as_deref().map(str::trim) {
+            if asset_url.is_empty() {
+                return Err(AppError::BadRequest(
+                    "asset_url cannot be empty".to_string(),
+                ));
+            }
+            if !self.spaces_service.check_file_exists(asset_url).await {
+                tracing::warn!(url = %asset_url, "Asset URL provided but file not found in storage");
+                return Err(AppError::BadRequest(
+                    "Verify failed: File not found in storage".to_string(),
+                ));
+            }
+        }
 
         let moment_id = MomentModel::generate_moment_id();
 
@@ -77,7 +90,12 @@ impl MomentsService {
             id: None,
             moment_id: moment_id.clone(),
             player_wallet_address: wallet.trim().to_lowercase(),
-            asset_url: request.asset_url.as_deref().map(|u| u.trim().to_string()),
+            asset_url: request
+                .asset_url
+                .as_deref()
+                .map(str::trim)
+                .filter(|u| !u.is_empty())
+                .map(|u| u.to_string()),
             asset_zg_hash: None,
             asset_metadata: request
                 .asset_metadata
@@ -105,47 +123,44 @@ impl MomentsService {
         })?;
 
         // Push migration job if asset_url and fileType are present
-        if let Some(ref asset_url) = request.asset_url {
-            let asset_url = asset_url.trim();
-            if !asset_url.is_empty() {
-                // Extract fileType from assetMetadata
-                let asset_type = request
-                    .asset_metadata
-                    .as_ref()
-                    .and_then(|m| m.get("fileType"))
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
+        if let Some(asset_url) = request.asset_url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
+            // Extract fileType from assetMetadata
+            let asset_type = request
+                .asset_metadata
+                .as_ref()
+                .and_then(|m| m.get("fileType"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
-                if let Some(asset_type) = asset_type {
-                    let job = MigrationJob {
-                        asset_url: asset_url.to_string(),
-                        asset_id: moment_id.clone(),
-                        asset_type,
-                        attempt: 1,
-                    };
+            if let Some(asset_type) = asset_type {
+                let job = MigrationJob {
+                    asset_url: asset_url.to_string(),
+                    asset_id: moment_id.clone(),
+                    asset_type,
+                    attempt: 1,
+                };
 
-                    if let Some(ref queue) = self.queue {
-                        match queue.push(&job) {
-                            Ok(_) => {
-                                tracing::info!(
-                                    moment_id = %moment_id,
-                                    "Migration job queued"
-                                );
-                            }
-                            Err(e) => {
-                                tracing::error!(
-                                    error = %e,
-                                    moment_id = %moment_id,
-                                    "Failed to queue migration job"
-                                );
-                            }
+                if let Some(ref queue) = self.queue {
+                    match queue.push_async(&job).await {
+                        Ok(_) => {
+                            tracing::info!(
+                                moment_id = %moment_id,
+                                "Migration job queued"
+                            );
                         }
-                    } else {
-                        tracing::warn!(
-                            moment_id = %moment_id,
-                            "No queue configured — migration job not queued"
-                        );
+                        Err(e) => {
+                            tracing::error!(
+                                error = %e,
+                                moment_id = %moment_id,
+                                "Failed to queue migration job"
+                            );
+                        }
                     }
+                } else {
+                    tracing::warn!(
+                        moment_id = %moment_id,
+                        "No queue configured — migration job not queued"
+                    );
                 }
             }
         }

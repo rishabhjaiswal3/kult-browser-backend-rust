@@ -67,10 +67,10 @@ async fn build_router(db: Database) -> Router {
             tracing::info!("Connected to Valkey for queues");
 
             // Queue instances
-            let m_queue = ValkyQueue::new(valkey_client.clone(), MIGRATION_QUEUE);
-            let s_queue = ValkyQueue::new(valkey_client.clone(), SCRAPE_QUEUE);
-            let c_queue = ValkyQueue::new(valkey_client.clone(), referral::CLICK_QUEUE);
-            let v_queue = ValkyQueue::new(valkey_client.clone(), referral::VERIFY_QUEUE);
+            let m_queue = ValkyQueue::new(valkey_client.clone(), MIGRATION_QUEUE.as_str());
+            let s_queue = ValkyQueue::new(valkey_client.clone(), SCRAPE_QUEUE.as_str());
+            let c_queue = ValkyQueue::new(valkey_client.clone(), referral::CLICK_QUEUE.as_str());
+            let v_queue = ValkyQueue::new(valkey_client.clone(), referral::VERIFY_QUEUE.as_str());
 
             migration_queue = Some(m_queue);
             scrape_queue = Some(s_queue);
@@ -135,7 +135,7 @@ async fn build_router(db: Database) -> Router {
         .nest("/moments", moments::routes(db.clone(), migration_queue))
         .nest(
             "/moments/social-media",
-            social_media::route::routes(scrape_queue).await,
+            social_media::route::routes(db.clone(), scrape_queue),
         )
         .nest(
             "/upload",

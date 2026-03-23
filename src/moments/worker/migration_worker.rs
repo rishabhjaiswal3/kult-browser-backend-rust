@@ -26,10 +26,10 @@ pub struct MigrationJob {
 }
 
 /// Queue name used for moment migration jobs.
-pub const MIGRATION_QUEUE: &str = "moments:migration";
+pub use crate::redis::keys::MOMENTS_ZERO_G_MIGRATION_QUEUE as MIGRATION_QUEUE;
 
 /// Dead-letter queue for permanently failed jobs.
-pub const DEAD_LETTER_QUEUE: &str = "moments:dead";
+pub use crate::redis::keys::MOMENTS_ZERO_G_MIGRATION_DEAD_LETTER_QUEUE as DEAD_LETTER_QUEUE;
 
 /// Singleton worker that processes migration jobs.
 ///
@@ -66,7 +66,7 @@ impl MigrationWorker {
     pub async fn run(mut self) {
         tracing::info!(
             "MigrationWorker started — listening on queue '{}'",
-            MIGRATION_QUEUE
+            self.queue.queue_name()
         );
 
         // On startup, we must recover any jobs that were stuck in the processing queue
@@ -223,13 +223,14 @@ impl MigrationWorker {
                 tracing::error!(error = %e, "Failed to re-queue job");
             }
         } else {
+            let dlq_name = format!("{}:dead_letter", self.queue.queue_name());
             tracing::error!(
                 asset_id = %job.asset_id,
                 attempts = job.attempt,
                 "Job failed after max retries — sending to dead letter queue"
             );
             // Push to dead-letter queue for manual inspection
-            let dlq = ValkyQueue::new(self.queue.connection().clone(), DEAD_LETTER_QUEUE);
+            let dlq = ValkyQueue::new(self.queue.connection().clone(), &dlq_name);
             if let Err(e) = dlq.push_async(&job).await {
                 tracing::error!(error = %e, "Failed to push to dead letter queue");
             }

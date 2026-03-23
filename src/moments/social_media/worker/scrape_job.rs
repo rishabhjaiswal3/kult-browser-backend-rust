@@ -8,10 +8,10 @@ use serde::{Deserialize, Serialize};
 use crate::moments::social_media::model::platform::Platform;
 
 /// Queue name used for post scraping jobs.
-pub const SCRAPE_QUEUE: &str = "posts:scrape";
+pub use crate::redis::keys::MOMENTS_BRIGHT_DATA_POST_SCRAPE_QUEUE as SCRAPE_QUEUE;
 
 /// Dead-letter queue for permanently failed scrape jobs.
-pub const SCRAPE_DEAD_LETTER: &str = "posts:scrape:dead";
+pub use crate::redis::keys::MOMENTS_BRIGHT_DATA_POST_SCRAPE_DEAD_LETTER_QUEUE as SCRAPE_DEAD_LETTER;
 
 /// Job payload pushed by PostService, popped by PostScrapeWorker.
 #[derive(Debug, Clone, Serialize, Deserialize)]
