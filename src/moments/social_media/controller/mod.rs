@@ -66,10 +66,10 @@ pub async fn submit_post(
         Err(PostServiceError::MomentNotFound) => {
             AppError::NotFound("Moment not found".to_string()).into_response()
         }
-        Err(PostServiceError::ForbiddenMomentAccess) => AppError::Forbidden(
-            "You can only submit posts for your own moments".to_string(),
-        )
-        .into_response(),
+        Err(PostServiceError::ForbiddenMomentAccess) => {
+            AppError::Forbidden("You can only submit posts for your own moments".to_string())
+                .into_response()
+        }
         Err(e) => {
             tracing::error!(error = %e, "Failed to submit shared post");
             AppError::Internal(e.to_string()).into_response()

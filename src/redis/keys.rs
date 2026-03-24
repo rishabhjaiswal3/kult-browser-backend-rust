@@ -42,8 +42,7 @@ pub static MOMENTS_BRIGHT_DATA_POST_SCRAPE_DEAD_LETTER_QUEUE: Lazy<String> =
 pub static MOMENTS_BRIGHT_DATA_POST_SCRAPE_DEAD_LETTER_PROCESSING_QUEUE: Lazy<String> =
     Lazy::new(|| processing_key(MOMENTS_BRIGHT_DATA_POST_SCRAPE_DEAD_LETTER_QUEUE.as_str()));
 
-pub static REFERRAL_CLICK_QUEUE: Lazy<String> =
-    Lazy::new(|| queue_key(&["referral", "click"]));
+pub static REFERRAL_CLICK_QUEUE: Lazy<String> = Lazy::new(|| queue_key(&["referral", "click"]));
 pub static REFERRAL_CLICK_PROCESSING_QUEUE: Lazy<String> =
     Lazy::new(|| processing_key(REFERRAL_CLICK_QUEUE.as_str()));
 

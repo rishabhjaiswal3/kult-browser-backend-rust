@@ -123,7 +123,12 @@ impl MomentsService {
         })?;
 
         // Push migration job if asset_url and fileType are present
-        if let Some(asset_url) = request.asset_url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
+        if let Some(asset_url) = request
+            .asset_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|u| !u.is_empty())
+        {
             // Extract fileType from assetMetadata
             let asset_type = request
                 .asset_metadata

@@ -1,7 +1,7 @@
 // src/referral/anti_fraud.rs
 
-use crate::redis::ValkyQueue;
 use crate::redis::keys::referral_signup_ip_key;
+use crate::redis::ValkyQueue;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

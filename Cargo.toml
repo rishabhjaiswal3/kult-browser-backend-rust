@@ -3,6 +3,10 @@ name = "kult-browser-backend-rust"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+dev-bins = []
+
 [[bin]]
 name = "kult_browser_backend_rust"
 path = "src/main.rs"
@@ -10,26 +14,32 @@ path = "src/main.rs"
 [[bin]]
 name = "test_bright_data"
 path = "bin/test/test_bright_data.rs"
+required-features = ["dev-bins"]
 
 [[bin]]
 name = "test_post_verification"
 path = "bin/test/test_post_verification.rs"
+required-features = ["dev-bins"]
 
 [[bin]]
 name = "test_full_scrape_pipeline"
 path = "bin/test/test_full_scrape_pipeline.rs"
+required-features = ["dev-bins"]
 
 [[bin]]
 name = "test_0g_upload"
 path = "bin/test/test_0g_upload.rs"
+required-features = ["dev-bins"]
 
 [[bin]]
 name = "test_moment_migration_pipeline"
 path = "bin/test/test_moment_migration_pipeline.rs"
+required-features = ["dev-bins"]
 
 [[bin]]
 name = "test_prod_flow"
 path = "bin/test/test_prod_flow.rs"
+required-features = ["dev-bins"]
 
 [dependencies]
 mongodb = "3.1"

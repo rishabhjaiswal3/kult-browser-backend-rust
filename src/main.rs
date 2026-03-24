@@ -78,8 +78,7 @@ async fn main() {
             // Post scrape worker
             let scrape_queue = ValkyQueue::new(valkey_client.clone(), SCRAPE_QUEUE.as_str());
             let post_repo = PostRepository::new(&db);
-            let scrape_worker =
-                PostScrapeWorker::new(scrape_queue, post_repo, shutdown_rx.clone());
+            let scrape_worker = PostScrapeWorker::new(scrape_queue, post_repo, shutdown_rx.clone());
             let handle = tokio::spawn(async move {
                 scrape_worker.run().await;
             });
