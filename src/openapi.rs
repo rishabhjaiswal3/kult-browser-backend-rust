@@ -100,6 +100,18 @@ pub struct MomentApiResponse {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct CommentApiResponse {
+    pub ok: bool,
+    pub data: crate::moments::comments::dto::CommentResponse,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct CommentListApiResponse {
+    pub ok: bool,
+    pub data: crate::moments::comments::dto::CommentListResponse,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct DeleteMomentResponse {
     pub message: String,
 }
@@ -108,6 +120,12 @@ pub struct DeleteMomentResponse {
 pub struct DeleteMomentApiResponse {
     pub ok: bool,
     pub data: DeleteMomentResponse,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct DeleteCommentApiResponse {
+    pub ok: bool,
+    pub data: crate::moments::comments::dto::DeleteCommentResponse,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -177,6 +195,12 @@ impl Modify for SecurityAddon {
         crate::moments::controller::moments_controller::get_moment,
         crate::moments::controller::moments_controller::update_moment,
         crate::moments::controller::moments_controller::delete_moment,
+        crate::moments::comments::controller::create_comment,
+        crate::moments::comments::controller::list_comments,
+        crate::moments::comments::controller::create_reply,
+        crate::moments::comments::controller::list_replies,
+        crate::moments::comments::controller::update_comment,
+        crate::moments::comments::controller::delete_comment,
         crate::moments::social_media::controller::submit_post,
         crate::upload::controller::generate_presigned_url,
         crate::referral::route::get_my_referral_code,
@@ -204,6 +228,11 @@ impl Modify for SecurityAddon {
             crate::leaderboard::dto::GameLeaderboardResponse,
             crate::leaderboard::dto::GlobalLeaderboardEntryDto,
             crate::leaderboard::dto::GlobalLeaderboardResponse,
+            crate::moments::comments::dto::CommentListResponse,
+            crate::moments::comments::dto::CommentResponse,
+            crate::moments::comments::dto::CreateCommentRequest,
+            crate::moments::comments::dto::DeleteCommentResponse,
+            crate::moments::comments::dto::UpdateCommentRequest,
             crate::moments::dto::CreateMomentRequest,
             crate::moments::dto::CreateMomentResponse,
             crate::moments::dto::MomentListResponse,
@@ -223,8 +252,11 @@ impl Modify for SecurityAddon {
             crate::upload::controller::PresignResponse,
             AllGamesApiResponse,
             CategoriesApiResponse,
+            CommentApiResponse,
+            CommentListApiResponse,
             ContentApiResponse,
             CreateMomentApiResponse,
+            DeleteCommentApiResponse,
             DeleteMomentApiResponse,
             DeleteMomentResponse,
             ErrorResponse,
@@ -254,6 +286,7 @@ impl Modify for SecurityAddon {
         (name = "Leaderboard", description = "Global and per-game rankings"),
         (name = "Player", description = "Player auth and profile"),
         (name = "Moments", description = "Moments feed and player moments"),
+        (name = "Comments", description = "Moment comments and replies"),
         (name = "Social Media", description = "Moment social media submission"),
         (name = "Upload", description = "Asset upload preparation"),
         (name = "Referral", description = "Referral management and redirects")

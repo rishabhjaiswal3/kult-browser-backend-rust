@@ -44,6 +44,14 @@ pub struct MomentModel {
     #[serde(rename = "assetZgHash", default)]
     pub asset_zg_hash: Option<String>,
 
+    /// Total likes on the moment
+    #[serde(rename = "numLikes", default)]
+    pub num_likes: u64,
+
+    /// Total active comments on the moment, including replies
+    #[serde(rename = "numComments", default)]
+    pub num_comments: u64,
+
     /// Optional metadata about the asset (type, size, dimensions, etc.)
     #[serde(rename = "assetMetadata", default)]
     pub asset_metadata: Option<mongodb::bson::Document>,

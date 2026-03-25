@@ -21,6 +21,12 @@ pub struct MomentResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asset_zg_hash: Option<String>,
 
+    /// Total likes on the moment
+    pub num_likes: u64,
+
+    /// Total active comments on the moment, including replies
+    pub num_comments: u64,
+
     /// Asset metadata
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Object)]

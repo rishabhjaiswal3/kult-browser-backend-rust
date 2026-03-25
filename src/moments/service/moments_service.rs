@@ -97,6 +97,8 @@ impl MomentsService {
                 .filter(|u| !u.is_empty())
                 .map(|u| u.to_string()),
             asset_zg_hash: None,
+            num_likes: 0,
+            num_comments: 0,
             asset_metadata: request
                 .asset_metadata
                 .as_ref()
@@ -407,6 +409,8 @@ impl MomentsService {
             player_wallet_address: moment.player_wallet_address,
             asset_url: moment.asset_url,
             asset_zg_hash: moment.asset_zg_hash,
+            num_likes: moment.num_likes,
+            num_comments: moment.num_comments,
             asset_metadata: moment
                 .asset_metadata
                 .and_then(|d| serde_json::to_value(d).ok()),

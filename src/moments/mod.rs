@@ -1,3 +1,4 @@
+pub mod comments;
 pub mod controller;
 pub mod dto;
 pub mod model;

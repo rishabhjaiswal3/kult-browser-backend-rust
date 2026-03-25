@@ -4,6 +4,7 @@ use futures::TryStreamExt;
 use mongodb::bson::{doc, DateTime, Document};
 use mongodb::{Collection, Database};
 
+use crate::config::CONFIG;
 use crate::moments::model::MomentModel;
 
 /// Repository for moment database operations.
@@ -16,9 +17,10 @@ pub struct MomentsRepository {
 impl MomentsRepository {
     /// Create a new repository instance.
     pub fn new(db: &Database) -> Self {
+        let collection_name = &CONFIG.db.moments_collection;
         Self {
-            collection: db.collection("moments"),
-            raw_collection: db.collection("moments"),
+            collection: db.collection(collection_name),
+            raw_collection: db.collection(collection_name),
         }
     }
 
@@ -157,5 +159,39 @@ impl MomentsRepository {
             .map_err(|e| e.to_string())?;
 
         Ok(result.is_some())
+    }
+
+    /// Increment total comments for a moment.
+    pub async fn increment_num_comments(&self, moment_id: &str, delta: i64) -> Result<bool, String> {
+        let result = self
+            .collection
+            .update_one(
+                doc! { "momentId": moment_id },
+                doc! {
+                    "$inc": { "numComments": delta },
+                    "$set": { "updatedAt": DateTime::now() }
+                },
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(result.matched_count > 0)
+    }
+
+    /// Increment total likes for a moment.
+    pub async fn increment_num_likes(&self, moment_id: &str, delta: i64) -> Result<bool, String> {
+        let result = self
+            .collection
+            .update_one(
+                doc! { "momentId": moment_id },
+                doc! {
+                    "$inc": { "numLikes": delta },
+                    "$set": { "updatedAt": DateTime::now() }
+                },
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(result.matched_count > 0)
     }
 }

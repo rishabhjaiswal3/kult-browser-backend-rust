@@ -30,6 +30,10 @@ pub struct DbConfig {
     pub game_leaderboard_config_collection: String,
     /// AI agent models collection name (default: ai_models)
     pub ai_models_collection: String,
+    /// Moments collection name (default: moments)
+    pub moments_collection: String,
+    /// Moment comments collection name (default: moment_comments)
+    pub moment_comments_collection: String,
     /// Shared posts collection name (default: shared_posts)
     pub shared_posts_collection: String,
 }
@@ -78,6 +82,12 @@ impl DbConfig {
 
             ai_models_collection: env::var("AI_MODELS_COLL")
                 .unwrap_or_else(|_| "ai_models".to_string()),
+
+            moments_collection: env::var("MOMENTS_COLL")
+                .unwrap_or_else(|_| "moments".to_string()),
+
+            moment_comments_collection: env::var("MOMENT_COMMENTS_COLL")
+                .unwrap_or_else(|_| "moment_comments".to_string()),
 
             shared_posts_collection: env::var("SHARED_POSTS_COLL")
                 .unwrap_or_else(|_| "shared_posts".to_string()),
