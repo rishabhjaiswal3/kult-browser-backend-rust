@@ -2,8 +2,9 @@ use super::platform::Platform;
 use chrono::{DateTime, Utc};
 use mongodb::bson::{oid::ObjectId, Bson};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, ToSchema)]
 pub enum ValidationStatus {
     Pending,
     Valid,

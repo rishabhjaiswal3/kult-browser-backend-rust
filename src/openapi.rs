@@ -160,6 +160,18 @@ pub struct SubmitSharedPostApiResponse {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct SharedPostListApiResponse {
+    pub ok: bool,
+    pub data: crate::moments::social_media::dto::SharedPostListResponse,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RequeueSharedPostApiResponse {
+    pub ok: bool,
+    pub data: crate::moments::social_media::dto::RequeueSharedPostResponse,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct PresignApiResponse {
     pub ok: bool,
     pub data: crate::upload::controller::PresignResponse,
@@ -223,6 +235,8 @@ impl Modify for SecurityAddon {
         crate::moments::comments::controller::update_comment,
         crate::moments::comments::controller::delete_comment,
         crate::moments::social_media::controller::submit_post,
+        crate::moments::social_media::controller::list_my_posts,
+        crate::moments::social_media::controller::requeue_post,
         crate::upload::controller::generate_presigned_url,
         crate::referral::route::get_my_referral_code,
         crate::referral::redirect_route::handle_redirect
@@ -263,8 +277,12 @@ impl Modify for SecurityAddon {
             crate::moments::dto::MomentListResponse,
             crate::moments::dto::MomentResponse,
             crate::moments::dto::UpdateMomentRequest,
+            crate::moments::social_media::dto::RequeueSharedPostResponse,
+            crate::moments::social_media::dto::SharedPostListResponse,
+            crate::moments::social_media::dto::SharedPostResponse,
             crate::moments::social_media::dto::SubmitPostRequest,
             crate::moments::social_media::model::platform::Platform,
+            crate::moments::social_media::model::post_model::ValidationStatus,
             crate::player::dto::GameScoreEntry,
             crate::player::dto::LoginRequest,
             crate::player::dto::LoginResponse,
@@ -297,10 +315,12 @@ impl Modify for SecurityAddon {
             MomentListApiResponse,
             PlayerProfileApiResponse,
             PresignApiResponse,
+            RequeueSharedPostApiResponse,
             RefreshLeaderboardApiResponse,
             RefreshLeaderboardResponse,
             ReferralErrorResponse,
             ReferralLinkResponse,
+            SharedPostListApiResponse,
             SubmitSharedPostApiResponse,
             SubmitSharedPostResponse,
             UpdateNameApiResponse

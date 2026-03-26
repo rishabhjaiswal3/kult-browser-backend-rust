@@ -3236,6 +3236,7 @@ dependencies = [
  "nanoid",
  "once_cell",
  "redis",
+ "regex",
  "reqwest",
  "rustls 0.23.36",
  "serde",

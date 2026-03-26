@@ -1,5 +1,6 @@
 use mongodb::{
     bson::{doc, oid::ObjectId},
+    options::ReturnDocument,
     Collection, Database,
 };
 
@@ -7,7 +8,7 @@ use super::super::model::{
     platform::Platform,
     post_model::{SharedPost, ValidationStatus},
 };
-use crate::config::db_config::DbConfig;
+use crate::config::CONFIG;
 
 #[derive(Clone)]
 pub struct PostRepository {
@@ -16,9 +17,7 @@ pub struct PostRepository {
 
 impl PostRepository {
     pub fn new(db: &Database) -> Self {
-        // The collection will be strictly named `shared_posts` in MongoDB
-        let config = DbConfig::from_env();
-        let collection = db.collection::<SharedPost>(&config.shared_posts_collection);
+        let collection = db.collection::<SharedPost>(&CONFIG.db.shared_posts_collection);
         Self { collection }
     }
 
@@ -34,7 +33,11 @@ impl PostRepository {
         wallet: &str,
     ) -> Result<Vec<SharedPost>, mongodb::error::Error> {
         let filter = doc! { "wallet_address": wallet };
-        let mut cursor = self.collection.find(filter).await?;
+        let mut cursor = self
+            .collection
+            .find(filter)
+            .sort(doc! { "created_at": -1 })
+            .await?;
 
         let mut posts = Vec::new();
         while cursor.advance().await? {
@@ -60,6 +63,42 @@ impl PostRepository {
             "post_id": post_id
         };
         self.collection.find_one(filter).await
+    }
+
+    pub async fn get_post_by_id(
+        &self,
+        id: ObjectId,
+    ) -> Result<Option<SharedPost>, mongodb::error::Error> {
+        self.collection.find_one(doc! { "_id": id }).await
+    }
+
+    pub async fn delete_post(&self, id: ObjectId) -> Result<bool, mongodb::error::Error> {
+        let result = self.collection.delete_one(doc! { "_id": id }).await?;
+        Ok(result.deleted_count > 0)
+    }
+
+    pub async fn mark_post_pending(
+        &self,
+        id: ObjectId,
+    ) -> Result<Option<SharedPost>, mongodb::error::Error> {
+        let now = chrono::Utc::now();
+
+        self.collection
+            .find_one_and_update(
+                doc! { "_id": id },
+                doc! {
+                    "$set": {
+                        "score": 0,
+                        "is_validated": false,
+                        "validation_status": "Pending",
+                        "validation_reason": mongodb::bson::Bson::Null,
+                        "last_validated_at": mongodb::bson::Bson::Null,
+                        "updated_at": mongodb::bson::DateTime::from_millis(now.timestamp_millis())
+                    }
+                },
+            )
+            .return_document(ReturnDocument::After)
+            .await
     }
 
     /// Updates the engagement metrics of a post and its validation status. (Called by the Scraper).

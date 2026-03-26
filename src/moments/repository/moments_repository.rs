@@ -3,6 +3,7 @@
 use futures::TryStreamExt;
 use mongodb::bson::{doc, DateTime, Document};
 use mongodb::{Collection, Database};
+use regex::escape as escape_regex;
 
 use crate::config::CONFIG;
 use crate::moments::model::MomentModel;
@@ -77,13 +78,10 @@ impl MomentsRepository {
         page: u32,
         per_page: u32,
         tags: Option<Vec<String>>,
+        search_query: Option<String>,
     ) -> Result<Vec<MomentModel>, String> {
         let skip = ((page.saturating_sub(1)) * per_page) as u64;
-
-        let filter = match tags {
-            Some(t) if !t.is_empty() => doc! { "tags": { "$in": t } },
-            _ => doc! {},
-        };
+        let filter = Self::build_public_feed_filter(tags, search_query);
 
         let cursor = self
             .collection
@@ -106,11 +104,12 @@ impl MomentsRepository {
     }
 
     /// Count all moments (optionally filtered by tags).
-    pub async fn count_all(&self, tags: Option<Vec<String>>) -> Result<u64, String> {
-        let filter = match tags {
-            Some(t) if !t.is_empty() => doc! { "tags": { "$in": t } },
-            _ => doc! {},
-        };
+    pub async fn count_all(
+        &self,
+        tags: Option<Vec<String>>,
+        search_query: Option<String>,
+    ) -> Result<u64, String> {
+        let filter = Self::build_public_feed_filter(tags, search_query);
 
         self.collection
             .count_documents(filter)
@@ -193,5 +192,33 @@ impl MomentsRepository {
             .map_err(|e| e.to_string())?;
 
         Ok(result.matched_count > 0)
+    }
+
+    fn build_public_feed_filter(
+        tags: Option<Vec<String>>,
+        search_query: Option<String>,
+    ) -> Document {
+        let mut filters = Vec::new();
+
+        if let Some(tags) = tags.filter(|tags| !tags.is_empty()) {
+            filters.push(doc! { "tags": { "$in": tags } });
+        }
+
+        if let Some(search_query) = search_query.filter(|q| !q.is_empty()) {
+            let escaped = escape_regex(&search_query);
+            filters.push(doc! {
+                "$or": [
+                    { "title": { "$regex": &escaped, "$options": "i" } },
+                    { "description": { "$regex": &escaped, "$options": "i" } },
+                    { "tags": { "$regex": &escaped, "$options": "i" } }
+                ]
+            });
+        }
+
+        match filters.len() {
+            0 => doc! {},
+            1 => filters.into_iter().next().unwrap_or_default(),
+            _ => doc! { "$and": filters },
+        }
     }
 }

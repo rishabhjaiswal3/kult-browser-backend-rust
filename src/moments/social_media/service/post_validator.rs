@@ -12,6 +12,7 @@
 
 use crate::config::CONFIG;
 use crate::external::bright_data::scrapers::scraped_post::ScrapedPostData;
+use reqwest::Url;
 
 /// Kult post validator.
 ///
@@ -85,9 +86,11 @@ impl PostValidator {
     /// These terms are declared in `CONFIG.scrape.validation_terms`.
     fn check_hashtags(post: &ScrapedPostData) -> Option<ValidationReason> {
         for tag in &post.hashtags {
-            let tag_lower = tag.to_lowercase();
+            let tag_normalized = Self::normalize_compact(tag);
             for term in Self::validation_terms() {
-                if tag_lower.contains(term) {
+                if !tag_normalized.is_empty()
+                    && tag_normalized == Self::normalize_compact(term)
+                {
                     return Some(ValidationReason::Hashtag(tag.clone()));
                 }
             }
@@ -100,9 +103,8 @@ impl PostValidator {
     /// These terms are declared in `CONFIG.scrape.validation_terms`.
     fn check_url_fields(post: &ScrapedPostData) -> Option<ValidationReason> {
         for url in &post.external_urls {
-            let url_lower = url.to_lowercase();
             for term in Self::validation_terms() {
-                if url_lower.contains(term) {
+                if Self::url_matches_term(url, term) {
                     return Some(ValidationReason::UrlField(url.clone()));
                 }
             }
@@ -117,11 +119,80 @@ impl PostValidator {
         let text = post.text_content.to_lowercase();
 
         for term in Self::validation_terms() {
-            if text.contains(term) {
+            if Self::contains_bounded_term(&text, &term.to_lowercase()) {
                 return Some(ValidationReason::TextRegex(term.clone()));
             }
         }
 
         None
+    }
+
+    fn normalize_compact(value: &str) -> String {
+        value
+            .chars()
+            .filter(|ch| ch.is_alphanumeric())
+            .flat_map(|ch| ch.to_lowercase())
+            .collect()
+    }
+
+    fn url_matches_term(url: &str, term: &str) -> bool {
+        let normalized_term = Self::normalize_compact(term);
+        if normalized_term.is_empty() {
+            return false;
+        }
+
+        let parsed = match Url::parse(url) {
+            Ok(parsed) => parsed,
+            Err(_) => return Self::contains_bounded_term(&url.to_lowercase(), &term.to_lowercase()),
+        };
+
+        if let Some(host) = parsed.host_str() {
+            let host_lower = host.to_lowercase();
+            if Self::normalize_compact(&host_lower) == normalized_term {
+                return true;
+            }
+
+            for label in host_lower.split('.') {
+                if Self::normalize_compact(label) == normalized_term {
+                    return true;
+                }
+            }
+        }
+
+        for segment in parsed.path_segments().into_iter().flatten() {
+            if Self::normalize_compact(segment) == normalized_term {
+                return true;
+            }
+        }
+
+        if let Some(query) = parsed.query() {
+            for piece in query.split(&['&', '='][..]) {
+                if Self::normalize_compact(piece) == normalized_term {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    fn contains_bounded_term(text: &str, term: &str) -> bool {
+        if term.is_empty() {
+            return false;
+        }
+
+        for (idx, _) in text.match_indices(term) {
+            let before = text[..idx].chars().next_back();
+            let after = text[idx + term.len()..].chars().next();
+
+            let before_ok = before.is_none_or(|ch| !ch.is_alphanumeric());
+            let after_ok = after.is_none_or(|ch| !ch.is_alphanumeric());
+
+            if before_ok && after_ok {
+                return true;
+            }
+        }
+
+        false
     }
 }

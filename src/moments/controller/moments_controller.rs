@@ -27,6 +27,9 @@ pub struct FeedQuery {
     #[serde(default = "default_per_page")]
     pub per_page: u32,
     pub tags: Option<String>, // Comma-separated tags
+    #[serde(rename = "search-query", alias = "searchQuery")]
+    #[param(rename = "search-query")]
+    pub search_query: Option<String>,
 }
 
 /// Query parameters for the authenticated player's moments.
@@ -91,7 +94,7 @@ pub async fn create_moment(
     get,
     path = "/api/moments",
     summary = "List public moments",
-    description = "Returns the public moments feed with optional tag filtering.",
+    description = "Returns the public moments feed with optional tag and search filtering.",
     params(FeedQuery),
     responses(
         (status = 200, description = "Public moments feed", body = crate::openapi::MomentListApiResponse),
@@ -112,7 +115,7 @@ pub async fn get_feed(
 
     match state
         .service
-        .get_feed(query.page, query.per_page, tags)
+        .get_feed(query.page, query.per_page, tags, query.search_query)
         .await
     {
         Ok(data) => ApiResponse::success(data).into_response(),

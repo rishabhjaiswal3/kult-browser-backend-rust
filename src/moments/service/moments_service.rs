@@ -212,22 +212,31 @@ impl MomentsService {
         page: u32,
         per_page: u32,
         tags: Option<Vec<String>>,
+        search_query: Option<String>,
     ) -> Result<MomentListResponse, AppError> {
         let page = if page == 0 { 1 } else { page };
         let per_page = per_page.min(50).max(1);
+        let search_query = search_query
+            .map(|q| q.trim().to_string())
+            .filter(|q| !q.is_empty());
 
-        tracing::debug!(page = page, per_page = per_page, "Fetching moments feed");
+        tracing::debug!(
+            page = page,
+            per_page = per_page,
+            search_query = search_query.as_deref().unwrap_or(""),
+            "Fetching moments feed"
+        );
 
         let moments = self
             .repo
-            .find_all(page, per_page, tags.clone())
+            .find_all(page, per_page, tags.clone(), search_query.clone())
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to fetch feed");
                 AppError::Internal(e)
             })?;
 
-        let total = self.repo.count_all(tags).await.map_err(|e| {
+        let total = self.repo.count_all(tags, search_query).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to count moments");
             AppError::Internal(e)
         })?;

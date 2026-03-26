@@ -20,7 +20,7 @@ use crate::redis::ValkyQueue;
 ///
 /// Routes:
 /// - POST   /register    - Create/register a new moment (auth required)
-/// - GET    /            - Get public feed (paginated)
+/// - GET    /            - Get public feed (paginated, tag/search filtered)
 /// - GET    /my          - Get player's moments (auth required)
 /// - GET    /:moment_id  - Get single moment
 /// - PATCH  /:moment_id  - Update moment (auth, owner only)

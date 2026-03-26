@@ -143,7 +143,8 @@ Params
   "query": {
     "page": 1,
     "perPage": 20,
-    "tags": "gameplay,win"
+    "tags": "gameplay,win",
+    "search-query": "victory"
   }
 }
 ```
