@@ -265,3 +265,40 @@ pub async fn delete_moment(
         Err(e) => e.into_response(),
     }
 }
+
+/// POST /api/moments/:moment_id/like
+/// Like a moment once (auth required)
+#[utoipa::path(
+    post,
+    path = "/api/moments/{moment_id}/like",
+    summary = "Like a moment",
+    description = "Registers a like for the authenticated player. A player can like a moment only once.",
+    security(
+        ("bearer_auth" = [])
+    ),
+    params(
+        ("moment_id" = String, Path, description = "Shareable moment identifier")
+    ),
+    responses(
+        (status = 200, description = "Moment liked", body = crate::openapi::LikeMomentApiResponse),
+        (status = 401, description = "Missing or invalid bearer token", body = crate::openapi::ErrorResponse),
+        (status = 404, description = "Moment not found", body = crate::openapi::ErrorResponse),
+        (status = 409, description = "Moment already liked by the authenticated player", body = crate::openapi::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::openapi::ErrorResponse)
+    ),
+    tag = "Moments"
+)]
+pub async fn like_moment(
+    State(state): State<MomentsState>,
+    auth: AuthPlayer,
+    Path(moment_id): Path<String>,
+) -> Response {
+    match state
+        .service
+        .like_moment(&auth.wallet_address, &moment_id)
+        .await
+    {
+        Ok(data) => ApiResponse::success(data).into_response(),
+        Err(e) => e.into_response(),
+    }
+}

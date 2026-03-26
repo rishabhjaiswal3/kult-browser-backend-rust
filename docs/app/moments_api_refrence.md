@@ -472,6 +472,104 @@ Response
 }
 ```
 
+### Like Moment
+
+#### `POST /moments/{moment_id}/like`
+
+Case 1: Success
+
+Params
+
+```json
+{
+  "headers": {
+    "Authorization": "Bearer <jwt>"
+  },
+  "path": {
+    "moment_id": "4mmj1DLpbU4JO7NlNq5bE"
+  }
+}
+```
+
+Request Body
+
+```text
+None
+```
+
+Response
+
+```json
+{
+  "ok": true,
+  "data": {
+    "momentId": "4mmj1DLpbU4JO7NlNq5bE",
+    "numLikes": 1,
+    "message": "Moment liked successfully"
+  }
+}
+```
+
+Case 2: Already liked
+
+Params
+
+```json
+{
+  "headers": {
+    "Authorization": "Bearer <jwt>"
+  },
+  "path": {
+    "moment_id": "4mmj1DLpbU4JO7NlNq5bE"
+  }
+}
+```
+
+Request Body
+
+```text
+None
+```
+
+Response
+
+```json
+{
+  "ok": false,
+  "message": "You have already liked this moment"
+}
+```
+
+Case 3: Not found
+
+Params
+
+```json
+{
+  "headers": {
+    "Authorization": "Bearer <jwt>"
+  },
+  "path": {
+    "moment_id": "missing-id"
+  }
+}
+```
+
+Request Body
+
+```text
+None
+```
+
+Response
+
+```json
+{
+  "ok": false,
+  "message": "Moment not found"
+}
+```
+
 ### Update Moment
 
 #### `PATCH /moments/{moment_id}`
@@ -739,6 +837,178 @@ Response
 {
   "ok": false,
   "message": "Moment not found"
+}
+```
+
+## Creators
+
+### My Creator Profile
+
+#### `GET /moments/creators/me`
+
+Case 1: Success
+
+Params
+
+```json
+{
+  "headers": {
+    "Authorization": "Bearer <jwt>"
+  }
+}
+```
+
+Request Body
+
+```text
+None
+```
+
+Response
+
+```json
+{
+  "ok": true,
+  "data": {
+    "walletAddress": "0xabc...",
+    "username": "Codex User",
+    "rank": 3,
+    "totalMoments": 6,
+    "totalMomentLikes": 14,
+    "totalMomentComments": 9,
+    "totalSocialLikes": 20,
+    "validatedPostsCount": 2,
+    "successfulReferrals": 0,
+    "totalScore": 43
+  }
+}
+```
+
+Case 2: Unauthorized
+
+Params
+
+```text
+Missing Authorization header
+```
+
+Request Body
+
+```text
+None
+```
+
+Response
+
+```json
+{
+  "ok": false,
+  "message": "string"
+}
+```
+
+Case 3: Creator profile not found
+
+Params
+
+```json
+{
+  "headers": {
+    "Authorization": "Bearer <jwt>"
+  }
+}
+```
+
+Request Body
+
+```text
+None
+```
+
+Response
+
+```json
+{
+  "ok": false,
+  "message": "Creator profile not found"
+}
+```
+
+### Creators Leaderboard
+
+#### `GET /moments/creators/leaderboard`
+
+Case 1: Success
+
+Params
+
+```json
+{
+  "query": {
+    "page": 1,
+    "pageSize": 20
+  }
+}
+```
+
+Request Body
+
+```text
+None
+```
+
+Response
+
+```json
+{
+  "ok": true,
+  "data": {
+    "entries": [
+      {
+        "rank": 1,
+        "walletAddress": "0xabc...",
+        "username": "Codex User",
+        "totalMoments": 6,
+        "totalMomentLikes": 14,
+        "totalMomentComments": 9,
+        "totalSocialLikes": 20,
+        "validatedPostsCount": 2,
+        "successfulReferrals": 0,
+        "totalScore": 43
+      }
+    ],
+    "totalCount": 12,
+    "page": 1,
+    "pageSize": 20,
+    "totalPages": 1
+  }
+}
+```
+
+Case 2: Backend failure
+
+Params
+
+```json
+{
+  "query": {
+    "page": 1
+  }
+}
+```
+
+Request Body
+
+```text
+None
+```
+
+Response
+
+```json
+{
+  "ok": false,
+  "message": "string"
 }
 ```
 

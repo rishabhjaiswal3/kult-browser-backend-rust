@@ -112,6 +112,24 @@ pub struct CommentListApiResponse {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct CreatorProfileApiResponse {
+    pub ok: bool,
+    pub data: crate::moments::creators::dto::CreatorProfileResponse,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct CreatorLeaderboardApiResponse {
+    pub ok: bool,
+    pub data: crate::moments::creators::dto::CreatorLeaderboardResponse,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct LikeMomentApiResponse {
+    pub ok: bool,
+    pub data: crate::moments::dto::LikeMomentResponse,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct DeleteMomentResponse {
     pub message: String,
 }
@@ -193,8 +211,11 @@ impl Modify for SecurityAddon {
         crate::moments::controller::moments_controller::get_feed,
         crate::moments::controller::moments_controller::get_my_moments,
         crate::moments::controller::moments_controller::get_moment,
+        crate::moments::controller::moments_controller::like_moment,
         crate::moments::controller::moments_controller::update_moment,
         crate::moments::controller::moments_controller::delete_moment,
+        crate::moments::creators::controller::get_me,
+        crate::moments::creators::controller::get_leaderboard,
         crate::moments::comments::controller::create_comment,
         crate::moments::comments::controller::list_comments,
         crate::moments::comments::controller::create_reply,
@@ -233,8 +254,12 @@ impl Modify for SecurityAddon {
             crate::moments::comments::dto::CreateCommentRequest,
             crate::moments::comments::dto::DeleteCommentResponse,
             crate::moments::comments::dto::UpdateCommentRequest,
+            crate::moments::creators::dto::CreatorLeaderboardEntry,
+            crate::moments::creators::dto::CreatorLeaderboardResponse,
+            crate::moments::creators::dto::CreatorProfileResponse,
             crate::moments::dto::CreateMomentRequest,
             crate::moments::dto::CreateMomentResponse,
+            crate::moments::dto::LikeMomentResponse,
             crate::moments::dto::MomentListResponse,
             crate::moments::dto::MomentResponse,
             crate::moments::dto::UpdateMomentRequest,
@@ -255,6 +280,8 @@ impl Modify for SecurityAddon {
             CommentApiResponse,
             CommentListApiResponse,
             ContentApiResponse,
+            CreatorLeaderboardApiResponse,
+            CreatorProfileApiResponse,
             CreateMomentApiResponse,
             DeleteCommentApiResponse,
             DeleteMomentApiResponse,
@@ -264,6 +291,7 @@ impl Modify for SecurityAddon {
             GameLeaderboardApiResponse,
             GlobalLeaderboardApiResponse,
             HealthResponse,
+            LikeMomentApiResponse,
             LoginApiResponse,
             MomentApiResponse,
             MomentListApiResponse,
@@ -286,6 +314,7 @@ impl Modify for SecurityAddon {
         (name = "Leaderboard", description = "Global and per-game rankings"),
         (name = "Player", description = "Player auth and profile"),
         (name = "Moments", description = "Moments feed and player moments"),
+        (name = "Moments Creators", description = "Moments creator stats and leaderboard"),
         (name = "Comments", description = "Moment comments and replies"),
         (name = "Social Media", description = "Moment social media submission"),
         (name = "Upload", description = "Asset upload preparation"),

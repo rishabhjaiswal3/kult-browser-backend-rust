@@ -34,6 +34,8 @@ pub struct DbConfig {
     pub moments_collection: String,
     /// Moment comments collection name (default: moment_comments)
     pub moment_comments_collection: String,
+    /// Moment likes collection name (default: moment_likes)
+    pub moment_likes_collection: String,
     /// Shared posts collection name (default: shared_posts)
     pub shared_posts_collection: String,
 }
@@ -88,6 +90,9 @@ impl DbConfig {
 
             moment_comments_collection: env::var("MOMENT_COMMENTS_COLL")
                 .unwrap_or_else(|_| "moment_comments".to_string()),
+
+            moment_likes_collection: env::var("MOMENT_LIKES_COLL")
+                .unwrap_or_else(|_| "moment_likes".to_string()),
 
             shared_posts_collection: env::var("SHARED_POSTS_COLL")
                 .unwrap_or_else(|_| "shared_posts".to_string()),

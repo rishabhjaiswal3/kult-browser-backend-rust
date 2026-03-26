@@ -3,11 +3,12 @@
 use crate::external::digital_ocean::spaces::SpacesService;
 use crate::handler::AppError;
 use crate::moments::dto::{
-    CreateMomentRequest, CreateMomentResponse, MomentListResponse, MomentResponse,
+    CreateMomentRequest, CreateMomentResponse, LikeMomentResponse, MomentListResponse,
+    MomentResponse,
     UpdateMomentRequest,
 };
-use crate::moments::model::MomentModel;
-use crate::moments::repository::MomentsRepository;
+use crate::moments::model::{MomentLikeModel, MomentModel};
+use crate::moments::repository::{CreateMomentLikeError, MomentLikesRepository, MomentsRepository};
 use crate::moments::worker::migration_worker::MigrationJob;
 use crate::redis::ValkyQueue;
 
@@ -15,14 +16,20 @@ use crate::redis::ValkyQueue;
 #[derive(Clone)]
 pub struct MomentsService {
     repo: MomentsRepository,
+    likes_repo: MomentLikesRepository,
     queue: Option<ValkyQueue>,
     spaces_service: SpacesService,
 }
 
 impl MomentsService {
-    pub fn new(repo: MomentsRepository, spaces_service: SpacesService) -> Self {
+    pub fn new(
+        repo: MomentsRepository,
+        likes_repo: MomentLikesRepository,
+        spaces_service: SpacesService,
+    ) -> Self {
         Self {
             repo,
+            likes_repo,
             queue: None,
             spaces_service,
         }
@@ -31,11 +38,13 @@ impl MomentsService {
     /// Create with queue for migration support.
     pub fn with_queue(
         repo: MomentsRepository,
+        likes_repo: MomentLikesRepository,
         queue: ValkyQueue,
         spaces_service: SpacesService,
     ) -> Self {
         Self {
             repo,
+            likes_repo,
             queue: Some(queue),
             spaces_service,
         }
@@ -400,6 +409,58 @@ impl MomentsService {
         tracing::info!(moment_id = %moment_id, "Moment deleted successfully");
 
         Ok(())
+    }
+
+    /// Like a moment once per wallet.
+    pub async fn like_moment(
+        &self,
+        wallet: &str,
+        moment_id: &str,
+    ) -> Result<LikeMomentResponse, AppError> {
+        let wallet = wallet.trim().to_lowercase();
+
+        let existing = self
+            .repo
+            .find_by_moment_id(moment_id)
+            .await
+            .map_err(AppError::Internal)?
+            .ok_or_else(|| AppError::NotFound("Moment not found".to_string()))?;
+
+        let like = MomentLikeModel::new(moment_id, &wallet);
+
+        match self.likes_repo.create(like.clone()).await {
+            Ok(_) => {}
+            Err(CreateMomentLikeError::Duplicate) => {
+                return Err(AppError::Conflict(
+                    "You have already liked this moment".to_string(),
+                ));
+            }
+            Err(CreateMomentLikeError::Internal(e)) => return Err(AppError::Internal(e)),
+        }
+
+        let incremented = self
+            .repo
+            .increment_num_likes(moment_id, 1)
+            .await
+            .map_err(AppError::Internal)?;
+
+        if !incremented {
+            let _ = self.likes_repo.delete_by_id(&like.id).await;
+            return Err(AppError::NotFound("Moment not found".to_string()));
+        }
+
+        let updated = self
+            .repo
+            .find_by_moment_id(moment_id)
+            .await
+            .map_err(AppError::Internal)?
+            .ok_or_else(|| AppError::NotFound("Moment not found".to_string()))?;
+
+        Ok(LikeMomentResponse {
+            moment_id: existing.moment_id,
+            num_likes: updated.num_likes,
+            message: "Moment liked successfully".to_string(),
+        })
     }
 
     /// Convert MomentModel to MomentResponse.
