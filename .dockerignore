@@ -1,0 +1,13 @@
+.git
+.gitignore
+.DS_Store
+.env
+.env.*
+target
+docs
+data
+tests
+scripts
+KULT_Browser_Dev_Spec_v4.docx.pdf
+IMPLEMENTATION_PLAN.md
+implementation_plan_discord_tele.md
