@@ -81,6 +81,8 @@ pub struct GameModel {
     pub images: GameImages,
     #[serde(rename = "isReleased", alias = "is_released", default)]
     pub is_released: bool,
+    #[serde(rename = "isDownloadable", alias = "is_downloadable", default)]
+    pub is_downloadable: bool,
 
     // Optional
     pub slogan: Option<super::Localized<String>>,
@@ -155,5 +157,23 @@ mod tests {
 
         assert!(game.created_at.is_none());
         assert!(game.updated_at.is_some());
+    }
+
+    #[test]
+    fn deserializes_is_downloadable_from_camel_case() {
+        let mut doc = base_game_doc();
+        doc.insert("isDownloadable", true);
+
+        let game: GameModel = mongodb::bson::from_document(doc).expect("game should deserialize");
+
+        assert!(game.is_downloadable);
+    }
+
+    #[test]
+    fn defaults_is_downloadable_to_false_when_missing() {
+        let game: GameModel =
+            mongodb::bson::from_document(base_game_doc()).expect("game should deserialize");
+
+        assert!(!game.is_downloadable);
     }
 }

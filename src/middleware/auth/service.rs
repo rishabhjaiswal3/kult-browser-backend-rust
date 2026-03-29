@@ -34,7 +34,7 @@ impl AuthService {
         let exp = now + Duration::days(Self::get_expiration_days());
 
         let claims = JwtClaims {
-            sub: player.wallet_address.clone(),
+            walletAddress: player.wallet_address.clone(),
             player_id: player.id.map(|oid| oid.to_hex()).unwrap_or_default(),
             name: player.name.clone(),
             iat: now.timestamp(),

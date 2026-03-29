@@ -161,7 +161,11 @@ impl MomentsRepository {
     }
 
     /// Increment total comments for a moment.
-    pub async fn increment_num_comments(&self, moment_id: &str, delta: i64) -> Result<bool, String> {
+    pub async fn increment_num_comments(
+        &self,
+        moment_id: &str,
+        delta: i64,
+    ) -> Result<bool, String> {
         let result = self
             .collection
             .update_one(

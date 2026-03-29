@@ -76,11 +76,13 @@ pub async fn submit_post(
             AppError::Forbidden("You can only submit posts for your own moments".to_string())
                 .into_response()
         }
-        Err(PostServiceError::QueueUnavailable) => AppError::Internal(
-            "Validation queue unavailable. Please try again later".to_string(),
-        )
-        .into_response(),
-        Err(PostServiceError::QueuePushFailed(message)) => AppError::Internal(message).into_response(),
+        Err(PostServiceError::QueueUnavailable) => {
+            AppError::Internal("Validation queue unavailable. Please try again later".to_string())
+                .into_response()
+        }
+        Err(PostServiceError::QueuePushFailed(message)) => {
+            AppError::Internal(message).into_response()
+        }
         Err(e) => {
             tracing::error!(error = %e, "Failed to submit shared post");
             AppError::Internal(e.to_string()).into_response()
@@ -101,10 +103,7 @@ pub async fn submit_post(
     ),
     tag = "Social Media"
 )]
-pub async fn list_my_posts(
-    State(state): State<SocialMediaState>,
-    auth: AuthPlayer,
-) -> Response {
+pub async fn list_my_posts(State(state): State<SocialMediaState>, auth: AuthPlayer) -> Response {
     match state
         .post_service
         .list_shared_posts(auth.wallet_address)
@@ -158,18 +157,20 @@ pub async fn requeue_post(
         Err(PostServiceError::InvalidPlatformUrl(message)) => {
             AppError::BadRequest(message).into_response()
         }
-        Err(PostServiceError::ForbiddenMomentAccess) => AppError::Forbidden(
-            "You can only access your own submitted posts".to_string(),
-        )
-        .into_response(),
+        Err(PostServiceError::ForbiddenMomentAccess) => {
+            AppError::Forbidden("You can only access your own submitted posts".to_string())
+                .into_response()
+        }
         Err(PostServiceError::PostNotFound) => {
             AppError::NotFound("Shared post not found".to_string()).into_response()
         }
-        Err(PostServiceError::QueueUnavailable) => AppError::Internal(
-            "Validation queue unavailable. Please try again later".to_string(),
-        )
-        .into_response(),
-        Err(PostServiceError::QueuePushFailed(message)) => AppError::Internal(message).into_response(),
+        Err(PostServiceError::QueueUnavailable) => {
+            AppError::Internal("Validation queue unavailable. Please try again later".to_string())
+                .into_response()
+        }
+        Err(PostServiceError::QueuePushFailed(message)) => {
+            AppError::Internal(message).into_response()
+        }
         Err(e) => {
             tracing::error!(error = %e, "Failed to requeue shared post");
             AppError::Internal(e.to_string()).into_response()

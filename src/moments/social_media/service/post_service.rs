@@ -113,7 +113,10 @@ impl PostService {
         Self::ensure_supported_platform(&platform)?;
         Self::validate_platform_url(&platform, &url)?;
 
-        let queue = self.queue.as_ref().ok_or(PostServiceError::QueueUnavailable)?;
+        let queue = self
+            .queue
+            .as_ref()
+            .ok_or(PostServiceError::QueueUnavailable)?;
 
         let moment = self
             .moments_repository
@@ -203,9 +206,13 @@ impl PostService {
         post_id: String,
         wallet_address: String,
     ) -> Result<ObjectId, PostServiceError> {
-        let queue = self.queue.as_ref().ok_or(PostServiceError::QueueUnavailable)?;
-        let post_object_id = ObjectId::parse_str(post_id.trim())
-            .map_err(|_| PostServiceError::InvalidPlatformUrl("Invalid shared post id".to_string()))?;
+        let queue = self
+            .queue
+            .as_ref()
+            .ok_or(PostServiceError::QueueUnavailable)?;
+        let post_object_id = ObjectId::parse_str(post_id.trim()).map_err(|_| {
+            PostServiceError::InvalidPlatformUrl("Invalid shared post id".to_string())
+        })?;
         let wallet_address = wallet_address.trim().to_lowercase();
 
         let post = self
@@ -274,9 +281,9 @@ impl PostService {
             Platform::Farcaster => &[][..],
         };
 
-        let matches_domain = allowed_domains.iter().any(|domain| {
-            host == *domain || host.ends_with(&format!(".{domain}"))
-        });
+        let matches_domain = allowed_domains
+            .iter()
+            .any(|domain| host == *domain || host.ends_with(&format!(".{domain}")));
 
         if !matches_domain {
             return Err(PostServiceError::InvalidPlatformUrl(format!(

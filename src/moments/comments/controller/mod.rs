@@ -98,7 +98,11 @@ pub async fn list_comments(
     let page = query.page.unwrap_or_else(default_page);
     let per_page = query.per_page.unwrap_or_else(default_per_page);
 
-    match state.service.list_comments(&moment_id, page, per_page).await {
+    match state
+        .service
+        .list_comments(&moment_id, page, per_page)
+        .await
+    {
         Ok(data) => ApiResponse::success(data).into_response(),
         Err(e) => e.into_response(),
     }
@@ -171,7 +175,11 @@ pub async fn list_replies(
     let page = query.page.unwrap_or_else(default_page);
     let per_page = query.per_page.unwrap_or_else(default_per_page);
 
-    match state.service.list_replies(&comment_id, page, per_page).await {
+    match state
+        .service
+        .list_replies(&comment_id, page, per_page)
+        .await
+    {
         Ok(data) => ApiResponse::success(data).into_response(),
         Err(e) => e.into_response(),
     }
@@ -258,4 +266,3 @@ pub async fn delete_comment(
         Err(e) => e.into_response(),
     }
 }
-

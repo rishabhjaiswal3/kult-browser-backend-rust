@@ -89,7 +89,7 @@ where
 
         Ok(AuthPlayer {
             id: claims.player_id,
-            wallet_address: claims.sub,
+            wallet_address: claims.walletAddress,
             name: claims.name,
         })
     }

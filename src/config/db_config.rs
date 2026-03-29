@@ -85,8 +85,7 @@ impl DbConfig {
             ai_models_collection: env::var("AI_MODELS_COLL")
                 .unwrap_or_else(|_| "ai_models".to_string()),
 
-            moments_collection: env::var("MOMENTS_COLL")
-                .unwrap_or_else(|_| "moments".to_string()),
+            moments_collection: env::var("MOMENTS_COLL").unwrap_or_else(|_| "moments".to_string()),
 
             moment_comments_collection: env::var("MOMENT_COMMENTS_COLL")
                 .unwrap_or_else(|_| "moment_comments".to_string()),

@@ -13,7 +13,10 @@ pub struct CreatorsService {
 }
 
 impl CreatorsService {
-    pub fn new(creators_repository: CreatorsRepository, player_repository: PlayerRepository) -> Self {
+    pub fn new(
+        creators_repository: CreatorsRepository,
+        player_repository: PlayerRepository,
+    ) -> Self {
         Self {
             creators_repository,
             player_repository,

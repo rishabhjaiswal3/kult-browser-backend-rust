@@ -1,6 +1,9 @@
 // src/moments/social_media/route/mod.rs
 
-use axum::{routing::{get, post}, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use mongodb::Database;
 
 use crate::moments::social_media::controller::{

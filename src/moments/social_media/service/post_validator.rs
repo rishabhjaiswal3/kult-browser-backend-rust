@@ -88,9 +88,7 @@ impl PostValidator {
         for tag in &post.hashtags {
             let tag_normalized = Self::normalize_compact(tag);
             for term in Self::validation_terms() {
-                if !tag_normalized.is_empty()
-                    && tag_normalized == Self::normalize_compact(term)
-                {
+                if !tag_normalized.is_empty() && tag_normalized == Self::normalize_compact(term) {
                     return Some(ValidationReason::Hashtag(tag.clone()));
                 }
             }
@@ -143,7 +141,9 @@ impl PostValidator {
 
         let parsed = match Url::parse(url) {
             Ok(parsed) => parsed,
-            Err(_) => return Self::contains_bounded_term(&url.to_lowercase(), &term.to_lowercase()),
+            Err(_) => {
+                return Self::contains_bounded_term(&url.to_lowercase(), &term.to_lowercase())
+            }
         };
 
         if let Some(host) = parsed.host_str() {

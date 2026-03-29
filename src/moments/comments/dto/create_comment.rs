@@ -6,4 +6,3 @@ use utoipa::ToSchema;
 pub struct CreateCommentRequest {
     pub content: String,
 }
-

@@ -22,7 +22,10 @@ impl CreatorsRepository {
     pub async fn find_creator(&self, wallet: &str) -> Result<Option<CreatorAggregate>, String> {
         let normalized_wallet = wallet.trim().to_lowercase();
         let mut pipeline = self.base_pipeline();
-        pipeline.insert(0, doc! { "$match": { "playerWalletAddress": &normalized_wallet } });
+        pipeline.insert(
+            0,
+            doc! { "$match": { "playerWalletAddress": &normalized_wallet } },
+        );
 
         let mut cursor = self
             .moments_collection

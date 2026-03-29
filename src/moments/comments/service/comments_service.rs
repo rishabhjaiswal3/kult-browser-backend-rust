@@ -162,7 +162,10 @@ impl CommentsService {
             return Err(AppError::Internal(e));
         }
 
-        if let Err(e) = self.increment_moment_comment_count(&parent.moment_id, 1).await {
+        if let Err(e) = self
+            .increment_moment_comment_count(&parent.moment_id, 1)
+            .await
+        {
             let _ = self
                 .comments_repository
                 .increment_reply_count(&parent_id, -1)

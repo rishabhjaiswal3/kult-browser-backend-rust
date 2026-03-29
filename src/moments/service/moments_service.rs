@@ -4,8 +4,7 @@ use crate::external::digital_ocean::spaces::SpacesService;
 use crate::handler::AppError;
 use crate::moments::dto::{
     CreateMomentRequest, CreateMomentResponse, LikeMomentResponse, MomentListResponse,
-    MomentResponse,
-    UpdateMomentRequest,
+    MomentResponse, UpdateMomentRequest,
 };
 use crate::moments::model::{MomentLikeModel, MomentModel};
 use crate::moments::repository::{CreateMomentLikeError, MomentLikesRepository, MomentsRepository};

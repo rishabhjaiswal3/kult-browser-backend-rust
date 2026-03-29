@@ -1,7 +1,4 @@
-use axum::{
-    routing::post,
-    Router,
-};
+use axum::{routing::post, Router};
 use mongodb::Database;
 
 use crate::moments::comments::controller::{
@@ -19,7 +16,10 @@ pub fn routes(db: Database) -> Router {
     let state = CommentsState { service };
 
     Router::new()
-        .route("/:moment_id/comments", post(create_comment).get(list_comments))
+        .route(
+            "/:moment_id/comments",
+            post(create_comment).get(list_comments),
+        )
         .route(
             "/comments/:comment_id/replies",
             post(create_reply).get(list_replies),

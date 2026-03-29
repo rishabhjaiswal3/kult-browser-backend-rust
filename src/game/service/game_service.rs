@@ -108,6 +108,7 @@ impl GameService {
             slogan: game.slogan,
             rating: game.rating,
             thumbnail: game.images.hero,
+            is_downloadable: game.is_downloadable,
         }
     }
 
@@ -215,8 +216,9 @@ fn normalized_text(text: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_about;
-    use crate::game::model::util;
+    use super::{normalize_about, GameService};
+    use crate::game::model::{util, GameImages, GameModel};
+    use mongodb::bson::oid::ObjectId;
     use serde_json::json;
 
     #[test]
@@ -262,5 +264,38 @@ mod tests {
         });
 
         assert!(normalize_about(Some(about)).is_none());
+    }
+
+    #[test]
+    fn maps_is_downloadable_in_game_list_item() {
+        let game = GameModel {
+            id: ObjectId::new(),
+            identification: "test-game".to_string(),
+            name: util::create_localized("Test Game".to_string()),
+            platform: "web".to_string(),
+            url: "https://example.com/game".to_string(),
+            images: GameImages::default(),
+            is_released: true,
+            is_downloadable: true,
+            slogan: None,
+            about: None,
+            category: None,
+            tags: None,
+            rating: None,
+            rating_count: None,
+            metadata: None,
+            created_at: None,
+            updated_at: None,
+        };
+
+        let dto = GameService::to_list_item(game);
+
+        assert!(dto.is_downloadable);
+        let json = serde_json::to_value(&dto).expect("dto should serialize");
+        assert_eq!(
+            json.get("isDownloadable").and_then(|value| value.as_bool()),
+            Some(true)
+        );
+        assert!(json.get("is_downloadable").is_none());
     }
 }

@@ -31,6 +31,7 @@ async fn test_game_repository_lifecycle() {
         url: "https://example.com/game".to_string(),
         images: GameImages::default(),
         is_released: true,
+        is_downloadable: false,
         slogan: Some(util::create_localized("A test game".to_string())),
         about: Some(json!(util::create_localized("Description".to_string()))),
         category: Some("Action".to_string()),

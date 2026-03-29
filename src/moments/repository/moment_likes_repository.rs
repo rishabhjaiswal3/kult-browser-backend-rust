@@ -21,13 +21,17 @@ impl MomentLikesRepository {
     }
 
     pub async fn create(&self, like: MomentLikeModel) -> Result<(), CreateMomentLikeError> {
-        self.collection.insert_one(like).await.map(|_| ()).map_err(|e| {
-            if e.to_string().contains("E11000") {
-                CreateMomentLikeError::Duplicate
-            } else {
-                CreateMomentLikeError::Internal(e.to_string())
-            }
-        })
+        self.collection
+            .insert_one(like)
+            .await
+            .map(|_| ())
+            .map_err(|e| {
+                if e.to_string().contains("E11000") {
+                    CreateMomentLikeError::Duplicate
+                } else {
+                    CreateMomentLikeError::Internal(e.to_string())
+                }
+            })
     }
 
     pub async fn delete_by_id(&self, like_id: &str) -> Result<bool, String> {
