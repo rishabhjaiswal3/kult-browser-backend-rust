@@ -121,6 +121,7 @@ impl GameService {
             about: normalize_about(game.about),
             rating: game.rating,
             thumbnail: game.images.hero,
+            is_downloadable: game.is_downloadable,
         }
     }
 }

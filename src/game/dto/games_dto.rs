@@ -28,6 +28,8 @@ pub struct GameDetailDto {
     pub name: Localized<String>,
     pub url: String,
     pub thumbnail: OrientedImage,
+    #[serde(rename = "isDownloadable", default)]
+    pub is_downloadable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
