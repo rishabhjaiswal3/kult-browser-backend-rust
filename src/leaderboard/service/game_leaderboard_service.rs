@@ -126,7 +126,7 @@ impl GameLeaderboardService {
             .find_all()
             .await
             .map_err(|e| format!("Failed to fetch configs: {}", e))?;
-        let wallet = wallet_address.trim().to_lowercase();
+        let wallet = wallet_address.trim().to_string();
 
         let mut results = Vec::new();
 
@@ -141,14 +141,13 @@ impl GameLeaderboardService {
                         "score": format!("${}", config.score_key),
                     }
                 },
-                doc! { "$addFields": { "personLc": { "$toLower": "$person" } } },
                 doc! {
                     "$setWindowFields": {
                         "sortBy": { "score": config.order },
                         "output": { "rank": { "$documentNumber": {} } }
                     }
                 },
-                doc! { "$match": { "personLc": &wallet } },
+                doc! { "$match": { "person": &wallet } },
                 doc! { "$limit": 1 },
             ];
 

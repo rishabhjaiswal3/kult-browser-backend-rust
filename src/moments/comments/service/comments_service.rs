@@ -41,7 +41,7 @@ impl CommentsService {
             id: Some(ObjectId::new()),
             moment_id: moment_id.to_string(),
             parent_comment_id: None,
-            author_wallet_address: wallet.trim().to_lowercase(),
+            author_wallet_address: wallet.trim().to_string(),
             content,
             reply_count: 0,
             is_edited: false,
@@ -131,7 +131,7 @@ impl CommentsService {
             id: Some(ObjectId::new()),
             moment_id: parent.moment_id.clone(),
             parent_comment_id: Some(parent_id),
-            author_wallet_address: wallet.trim().to_lowercase(),
+            author_wallet_address: wallet.trim().to_string(),
             content,
             reply_count: 0,
             is_edited: false,
@@ -231,7 +231,7 @@ impl CommentsService {
             .map_err(AppError::Internal)?
             .ok_or_else(|| AppError::NotFound("Comment not found".to_string()))?;
 
-        if existing.author_wallet_address != wallet.trim().to_lowercase() {
+        if existing.author_wallet_address != wallet.trim() {
             return Err(AppError::Forbidden(
                 "You can only update your own comments".to_string(),
             ));
@@ -263,7 +263,7 @@ impl CommentsService {
             .map_err(AppError::Internal)?
             .ok_or_else(|| AppError::NotFound("Comment not found".to_string()))?;
 
-        if existing.author_wallet_address != wallet.trim().to_lowercase() {
+        if existing.author_wallet_address != wallet.trim() {
             return Err(AppError::Forbidden(
                 "You can only delete your own comments".to_string(),
             ));

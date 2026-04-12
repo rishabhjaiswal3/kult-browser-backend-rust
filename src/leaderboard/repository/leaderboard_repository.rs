@@ -2,6 +2,7 @@ use crate::config::CONFIG;
 use crate::leaderboard::model::GlobalLeaderboardModel;
 use futures::stream::TryStreamExt;
 use mongodb::bson::doc;
+use mongodb::options::ReplaceOptions;
 use mongodb::{Collection, Database};
 
 #[derive(Clone)]
@@ -43,14 +44,27 @@ impl GlobalLeaderboardRepository {
         &self,
         entries: &[GlobalLeaderboardModel],
     ) -> mongodb::error::Result<()> {
-        // Simple approach: Delete all and insert batch
-        // In production, consider using a temporary collection and renaming for atomicity.
-
-        self.collection.delete_many(mongodb::bson::doc! {}).await?;
-
-        if !entries.is_empty() {
-            self.collection.insert_many(entries).await?;
+        if entries.is_empty() {
+            self.collection.delete_many(doc! {}).await?;
+            return Ok(());
         }
+
+        // Collect all wallet addresses that should remain in the leaderboard
+        let active_wallets: Vec<&str> = entries.iter().map(|e| e.wallet_address.as_str()).collect();
+
+        // Bulk upsert: replace each entry atomically so readers never see empty data
+        let upsert_opts = ReplaceOptions::builder().upsert(true).build();
+        for entry in entries {
+            self.collection
+                .replace_one(doc! { "walletAddress": &entry.wallet_address }, entry)
+                .with_options(upsert_opts.clone())
+                .await?;
+        }
+
+        // Remove players who are no longer ranked
+        self.collection
+            .delete_many(doc! { "walletAddress": { "$nin": &active_wallets } })
+            .await?;
 
         Ok(())
     }
@@ -62,10 +76,10 @@ impl GlobalLeaderboardRepository {
         &self,
         wallet_address: &str,
     ) -> Result<Option<GlobalLeaderboardModel>, String> {
-        let normalized = wallet_address.trim().to_lowercase();
+        let wallet = wallet_address.trim();
 
         self.collection
-            .find_one(doc! { "walletAddress": &normalized })
+            .find_one(doc! { "walletAddress": wallet })
             .await
             .map_err(|e| format!("Failed to get player entry: {}", e))
     }

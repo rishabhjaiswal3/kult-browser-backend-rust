@@ -74,7 +74,7 @@ impl EvaluationWorker {
                             };
 
                             // Prevent self-referrals
-                            if referrer_wallet == pending_check.new_player_id.to_lowercase() {
+                            if referrer_wallet == pending_check.new_player_id {
                                 tracing::warn!("Blocked self-referral: {}", referrer_wallet);
                                 let _ = self.verify_queue.ack_async(&raw_job_data).await;
                                 continue;

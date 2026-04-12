@@ -13,11 +13,11 @@ pub struct MomentLikeModel {
 
 impl MomentLikeModel {
     pub fn new(moment_id: &str, wallet: &str) -> Self {
-        let normalized_wallet = wallet.trim().to_lowercase();
+        let wallet = wallet.trim().to_string();
         Self {
-            id: format!("{moment_id}:{normalized_wallet}"),
+            id: format!("{moment_id}:{wallet}"),
             moment_id: moment_id.to_string(),
-            author_wallet_address: normalized_wallet,
+            author_wallet_address: wallet,
             created_at: DateTime::now(),
         }
     }

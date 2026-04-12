@@ -106,7 +106,7 @@ impl PostService {
         url: String,
     ) -> Result<ObjectId, PostServiceError> {
         let moment_id = moment_id.trim().to_string();
-        let wallet_address = wallet_address.trim().to_lowercase();
+        let wallet_address = wallet_address.trim().to_string();
         let post_id = post_id.trim().to_string();
         let url = url.trim().to_string();
 
@@ -190,7 +190,7 @@ impl PostService {
         &self,
         wallet_address: String,
     ) -> Result<SharedPostListResponse, PostServiceError> {
-        let wallet_address = wallet_address.trim().to_lowercase();
+        let wallet_address = wallet_address.trim().to_string();
         let posts = self
             .post_repository
             .get_posts_by_wallet_address(&wallet_address)
@@ -213,7 +213,7 @@ impl PostService {
         let post_object_id = ObjectId::parse_str(post_id.trim()).map_err(|_| {
             PostServiceError::InvalidPlatformUrl("Invalid shared post id".to_string())
         })?;
-        let wallet_address = wallet_address.trim().to_lowercase();
+        let wallet_address = wallet_address.trim().to_string();
 
         let post = self
             .post_repository

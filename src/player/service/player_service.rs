@@ -46,7 +46,7 @@ impl PlayerService {
         request: LoginRequest,
         ip_address: &str,
     ) -> Result<LoginResponse, AppError> {
-        let wallet = request.wallet_address.trim().to_lowercase();
+        let wallet = request.wallet_address.trim().to_string();
         // ...
         tracing::info!(wallet = %wallet, "Player login attempt");
 
@@ -139,7 +139,7 @@ impl PlayerService {
         &self,
         wallet_address: &str,
     ) -> Result<PlayerProfileResponse, AppError> {
-        let wallet = wallet_address.trim().to_lowercase();
+        let wallet = wallet_address.trim().to_string();
         tracing::debug!(wallet = %wallet, "Fetching player profile");
 
         let player = self

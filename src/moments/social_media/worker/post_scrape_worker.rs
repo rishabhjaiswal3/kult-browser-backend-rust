@@ -172,9 +172,15 @@ impl PostScrapeWorker {
                 attempts = job.attempt,
                 "Job failed after max retries — sending to dead letter queue"
             );
-            let dlq = ValkyQueue::new(self.queue.connection().clone(), &dlq_name);
-            if let Err(e) = dlq.push_async(&job).await {
-                tracing::error!(error = %e, "Failed to push to dead letter queue");
+            match ValkyQueue::new(self.queue.client().clone(), &dlq_name).await {
+                Ok(dlq) => {
+                    if let Err(e) = dlq.push_async(&job).await {
+                        tracing::error!(error = %e, "Failed to push to dead letter queue");
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to connect to dead letter queue");
+                }
             }
         }
     }

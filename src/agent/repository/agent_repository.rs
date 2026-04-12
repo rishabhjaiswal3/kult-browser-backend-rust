@@ -56,11 +56,10 @@ impl AgentRepository {
         // 1. Generate the completely random secure EVM pair (Wallet + Private Key)
         let generated_wallet = AgentWallet::generate();
 
-        // 2. Construct the Agent database model
-        // We use lowercase to ensure standard EVM address formatting
+        // 2. Construct the Agent database model. Wallet casing is preserved.
         let new_agent = AgentModel::new(
-            owner_wallet.to_lowercase(),
-            generated_wallet.address.to_lowercase(),
+            owner_wallet.trim().to_string(),
+            generated_wallet.address,
             generated_wallet.private_key,
         );
 
@@ -68,8 +67,8 @@ impl AgentRepository {
         self.collection.insert_one(&new_agent).await?;
 
         info!(
-            owner_wallet = %owner_wallet,
-            agent_wallet = %generated_wallet.address,
+            owner_wallet = %new_agent.owner_wallet,
+            agent_wallet = %new_agent.agent_wallet,
             "Successfully generated and stored new Web3 Agent Identity for user"
         );
 
@@ -82,7 +81,7 @@ impl AgentRepository {
         owner_wallet: &str,
     ) -> Result<Option<AgentModel>, mongodb::error::Error> {
         self.collection
-            .find_one(doc! { "ownerWallet": owner_wallet.to_lowercase() })
+            .find_one(doc! { "ownerWallet": owner_wallet.trim() })
             .await
     }
 
@@ -92,7 +91,7 @@ impl AgentRepository {
         agent_wallet: &str,
     ) -> Result<Option<AgentModel>, mongodb::error::Error> {
         self.collection
-            .find_one(doc! { "agentWallet": agent_wallet.to_lowercase() })
+            .find_one(doc! { "agentWallet": agent_wallet.trim() })
             .await
     }
 }

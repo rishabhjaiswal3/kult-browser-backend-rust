@@ -22,10 +22,10 @@ impl PlayerRepository {
     // READ OPERATIONS
     // ─────────────────────────────────────────────────────────────────────
 
-    /// Find a player by their wallet address (case-insensitive)
+    /// Find a player by their wallet address (case-sensitive)
     ///
     /// # Arguments
-    /// * `wallet_address` - The Ethereum wallet address (will be lowercased)
+    /// * `wallet_address` - The Ethereum wallet address (case is preserved)
     ///
     /// # Returns
     /// * `Ok(Some(PlayerModel))` if found
@@ -34,10 +34,10 @@ impl PlayerRepository {
         &self,
         wallet_address: &str,
     ) -> Result<Option<PlayerModel>, String> {
-        let normalized = wallet_address.trim().to_lowercase();
+        let wallet = wallet_address.trim();
 
         self.collection
-            .find_one(doc! { "walletAddress": &normalized })
+            .find_one(doc! { "walletAddress": wallet })
             .await
             .map_err(|e| format!("Failed to find player: {}", e))
     }
@@ -61,11 +61,11 @@ impl PlayerRepository {
 
     /// Check if a wallet address is already registered
     pub async fn exists_by_wallet(&self, wallet_address: &str) -> Result<bool, String> {
-        let normalized = wallet_address.trim().to_lowercase();
+        let wallet = wallet_address.trim();
 
         let count = self
             .collection
-            .count_documents(doc! { "walletAddress": &normalized })
+            .count_documents(doc! { "walletAddress": wallet })
             .await
             .map_err(|e| format!("Failed to check existence: {}", e))?;
 
@@ -92,11 +92,11 @@ impl PlayerRepository {
         metadata: Option<Document>,
     ) -> Result<PlayerModel, String> {
         let now = BsonDateTime::now();
-        let normalized_wallet = wallet_address.trim().to_lowercase();
+        let wallet = wallet_address.trim().to_string();
 
         let player = PlayerModel {
             id: None, // MongoDB will generate
-            wallet_address: normalized_wallet,
+            wallet_address: wallet,
             name: name.trim().to_string(),
             metadata,
             referral_code: None,
@@ -117,11 +117,10 @@ impl PlayerRepository {
         })
     }
 
-    /// Find or create a player (upsert pattern for login).
+    /// Find or create a player atomically (upsert pattern for login).
     ///
-    /// This is the primary method used during login:
-    /// - If player exists: return existing player
-    /// - If player doesn't exist: create new player with provided details
+    /// Uses `find_one_and_update` with `upsert: true` to avoid race conditions
+    /// when two requests for the same new wallet arrive simultaneously.
     ///
     /// # Arguments
     /// * `wallet_address` - Ethereum wallet address
@@ -129,21 +128,45 @@ impl PlayerRepository {
     /// * `metadata` - Optional metadata (only used for creation)
     ///
     /// # Returns
-    /// * [(PlayerModel, bool)](cci:1://file:///Users/ankurgangwar/Dev/fl/full_stack/browser-deployed/kult-browser-backend-rust/src/leaderboard/repository/game_leaderboard_config_repository.rs:10:4-14:5) - The player and whether it was newly created
+    /// * `(PlayerModel, bool)` - The player and whether it was newly created
     pub async fn find_or_create(
         &self,
         wallet_address: &str,
         name: &str,
         metadata: Option<Document>,
     ) -> Result<(PlayerModel, bool), String> {
-        // First, try to find existing player
-        if let Some(existing) = self.find_by_wallet(wallet_address).await? {
-            return Ok((existing, false)); // false = not newly created
+        let wallet = wallet_address.trim().to_string();
+        let now = BsonDateTime::now();
+
+        let mut set_on_insert = doc! {
+            "walletAddress": &wallet,
+            "name": name.trim(),
+            "createdAt": now,
+            "updatedAt": now,
+        };
+
+        if let Some(meta) = metadata {
+            set_on_insert.insert("metadata", meta);
         }
 
-        // Create new player
-        let player = self.create(wallet_address, name, metadata).await?;
-        Ok((player, true)) // true = newly created
+        // Atomic upsert: only sets fields on insert, returns the doc after the operation
+        let result = self
+            .collection
+            .find_one_and_update(
+                doc! { "walletAddress": &wallet },
+                doc! { "$setOnInsert": set_on_insert },
+            )
+            .upsert(true)
+            .return_document(mongodb::options::ReturnDocument::After)
+            .await
+            .map_err(|e| format!("Failed to upsert player: {}", e))?
+            .ok_or_else(|| "Upsert returned no document".to_string())?;
+
+        // If createdAt equals updatedAt and matches `now`, it was just created.
+        // More reliably: check if the returned doc's createdAt matches our `now`.
+        let is_new = result.created_at.map(|ca| ca == now).unwrap_or(false);
+
+        Ok((result, is_new))
     }
 
     /// Update a player's display name.
@@ -160,7 +183,7 @@ impl PlayerRepository {
         wallet_address: &str,
         new_name: &str,
     ) -> Result<Option<PlayerModel>, String> {
-        let normalized = wallet_address.trim().to_lowercase();
+        let wallet = wallet_address.trim();
         let trimmed_name = new_name.trim();
 
         // Validate name is not empty
@@ -171,7 +194,7 @@ impl PlayerRepository {
         let result = self
             .collection
             .find_one_and_update(
-                doc! { "walletAddress": &normalized },
+                doc! { "walletAddress": wallet },
                 doc! {
                     "$set": {
                         "name": trimmed_name,
@@ -196,12 +219,12 @@ impl PlayerRepository {
         wallet_address: &str,
         metadata: Document,
     ) -> Result<Option<PlayerModel>, String> {
-        let normalized = wallet_address.trim().to_lowercase();
+        let wallet = wallet_address.trim();
 
         let result = self
             .collection
             .find_one_and_update(
-                doc! { "walletAddress": &normalized },
+                doc! { "walletAddress": wallet },
                 doc! {
                     "$set": {
                         "metadata": metadata,
@@ -239,14 +262,14 @@ impl PlayerRepository {
         &self,
         wallet_addresses: &[String],
     ) -> Result<Vec<PlayerModel>, String> {
-        let normalized: Vec<String> = wallet_addresses
+        let wallets: Vec<String> = wallet_addresses
             .iter()
-            .map(|w| w.trim().to_lowercase())
+            .map(|w| w.trim().to_string())
             .collect();
 
         let cursor = self
             .collection
-            .find(doc! { "walletAddress": { "$in": &normalized } })
+            .find(doc! { "walletAddress": { "$in": &wallets } })
             .await
             .map_err(|e| format!("Failed to find players: {}", e))?;
 
@@ -274,12 +297,12 @@ impl PlayerRepository {
         wallet_address: &str,
         code: &str,
     ) -> Result<Option<PlayerModel>, String> {
-        let normalized = wallet_address.trim().to_lowercase();
+        let wallet = wallet_address.trim();
 
         let result = self
             .collection
             .find_one_and_update(
-                doc! { "walletAddress": &normalized },
+                doc! { "walletAddress": wallet },
                 doc! { "$set": { "referralCode": code } },
             )
             .return_document(mongodb::options::ReturnDocument::After)

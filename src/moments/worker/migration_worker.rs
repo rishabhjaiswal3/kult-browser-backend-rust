@@ -3,8 +3,9 @@
 // Downloads from DO Spaces → uploads to 0G → updates DB
 
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::watch;
+use tokio::sync::{watch, Semaphore};
 
 use crate::external::spaces;
 use crate::external::storage;
@@ -38,6 +39,10 @@ pub use crate::redis::keys::MOMENTS_ZERO_G_MIGRATION_DEAD_LETTER_QUEUE as DEAD_L
 /// - Process: download, upload to 0G, update MongoDB, cleanup
 /// - Unconditionally `ack_async`s the raw payload when done (even on retry/DLQ)
 /// - Listens for shutdown signal to exit gracefully
+/// Max concurrent migration jobs. Kept low for single-CPU deployments;
+/// each job is I/O-bound (download + upload) so mild concurrency helps throughput.
+const MAX_CONCURRENT_JOBS: usize = 3;
+
 pub struct MigrationWorker {
     queue: ValkyQueue,
     repo: MomentsRepository,
@@ -63,8 +68,10 @@ impl MigrationWorker {
     }
 
     /// Run the worker loop until a shutdown signal is received.
+    /// Processes up to MAX_CONCURRENT_JOBS in parallel using a semaphore.
     pub async fn run(mut self) {
         tracing::info!(
+            max_concurrent = MAX_CONCURRENT_JOBS,
             "MigrationWorker started — listening on queue '{}'",
             self.queue.queue_name()
         );
@@ -79,19 +86,34 @@ impl MigrationWorker {
             Err(e) => tracing::warn!(error = %e, "Failed to recover stalled jobs"),
         }
 
+        let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_JOBS));
+
+        // Wrap shared state in Arc for spawned tasks
+        let queue = Arc::new(self.queue.clone());
+        let repo = Arc::new(self.repo.clone());
+        let max_retries = self.max_retries;
+
         loop {
             tokio::select! {
                 // 1. Listen for graceful shutdown
                 _ = self.shutdown_rx.changed() => {
                     if *self.shutdown_rx.borrow() {
-                        tracing::info!("MigrationWorker received shutdown signal. Exiting gracefully.");
+                        tracing::info!("MigrationWorker received shutdown signal. Waiting for in-flight jobs...");
+                        // Wait for all in-flight jobs to complete
+                        let _ = semaphore.acquire_many(MAX_CONCURRENT_JOBS as u32).await;
+                        tracing::info!("MigrationWorker: all in-flight jobs finished. Exiting.");
                         break;
                     }
                 }
 
-                // 2. Poll the queue
-                pop_result = self.queue.pop_async::<MigrationJob>(self.poll_timeout_secs) => {
-                    match pop_result {
+                // 2. Acquire a permit, then poll the queue
+                permit = semaphore.clone().acquire_owned() => {
+                    let permit = match permit {
+                        Ok(p) => p,
+                        Err(_) => break, // Semaphore closed
+                    };
+
+                    match self.queue.pop_async::<MigrationJob>(self.poll_timeout_secs).await {
                         Ok(Some((job, raw_data))) => {
                             tracing::info!(
                                 asset_id = %job.asset_id,
@@ -100,15 +122,23 @@ impl MigrationWorker {
                                 "Processing migration job"
                             );
 
-                            self.process_job(job).await;
+                            let q = queue.clone();
+                            let r = repo.clone();
+                            tokio::spawn(async move {
+                                Self::process_job_static(&q, &r, max_retries, job).await;
 
-                            // UNCONDITIONAL ACK: Whether successful, retried, or DLQ'd, the original popped job is done.
-                            if let Err(e) = self.queue.ack_async(&raw_data).await {
-                                tracing::error!(error = %e, "Failed to ACK completed job");
-                            }
+                                if let Err(e) = q.ack_async(&raw_data).await {
+                                    tracing::error!(error = %e, "Failed to ACK completed job");
+                                }
+                                drop(permit); // Release semaphore slot
+                            });
                         }
-                        Ok(None) => continue, // Timeout — no jobs, loop back
+                        Ok(None) => {
+                            drop(permit);
+                            continue; // Timeout — no jobs, loop back
+                        }
                         Err(e) => {
+                            drop(permit);
                             tracing::error!(error = %e, "Queue pop error, retrying in 5s");
                             tokio::time::sleep(Duration::from_secs(5)).await;
                         }
@@ -118,12 +148,13 @@ impl MigrationWorker {
         }
     }
 
-    /// Process a single migration job:
-    /// 1. Download file from DO Spaces
-    /// 2. Upload to 0G storage
-    /// 3. Update asset_zg_hash in MongoDB
-    /// 4. Cleanup temp file
-    async fn process_job(&self, job: MigrationJob) {
+    /// Process a single migration job (static version for spawned tasks).
+    async fn process_job_static(
+        queue: &ValkyQueue,
+        repo: &MomentsRepository,
+        max_retries: u32,
+        job: MigrationJob,
+    ) {
         // Step 1: Download from DO Spaces
         let download = match spaces::download_file(&job.asset_url).await {
             Ok(result) => {
@@ -141,7 +172,7 @@ impl MigrationWorker {
                     error = %e,
                     "Failed to download from DO Spaces"
                 );
-                self.handle_failure(job).await;
+                Self::handle_failure_static(queue, max_retries, job).await;
                 return;
             }
         };
@@ -165,14 +196,13 @@ impl MigrationWorker {
                 );
                 // Cleanup temp file before retrying
                 spaces::cleanup(&download.local_path);
-                self.handle_failure(job).await;
+                Self::handle_failure_static(queue, max_retries, job).await;
                 return;
             }
         };
 
         // Step 3: Update MongoDB with 0G hash
-        match self
-            .repo
+        match repo
             .update_zg_hash(&job.asset_id, &upload_result.root_hash)
             .await
         {
@@ -208,8 +238,8 @@ impl MigrationWorker {
     }
 
     /// Handle a failed job: retry or send to dead-letter queue.
-    async fn handle_failure(&self, job: MigrationJob) {
-        if job.attempt < self.max_retries {
+    async fn handle_failure_static(queue: &ValkyQueue, max_retries: u32, job: MigrationJob) {
+        if job.attempt < max_retries {
             let retry_job = MigrationJob {
                 attempt: job.attempt + 1,
                 ..job
@@ -219,20 +249,25 @@ impl MigrationWorker {
                 attempt = retry_job.attempt,
                 "Retrying migration job"
             );
-            if let Err(e) = self.queue.push_async(&retry_job).await {
+            if let Err(e) = queue.push_async(&retry_job).await {
                 tracing::error!(error = %e, "Failed to re-queue job");
             }
         } else {
-            let dlq_name = format!("{}:dead_letter", self.queue.queue_name());
+            let dlq_name = format!("{}:dead_letter", queue.queue_name());
             tracing::error!(
                 asset_id = %job.asset_id,
                 attempts = job.attempt,
                 "Job failed after max retries — sending to dead letter queue"
             );
-            // Push to dead-letter queue for manual inspection
-            let dlq = ValkyQueue::new(self.queue.connection().clone(), &dlq_name);
-            if let Err(e) = dlq.push_async(&job).await {
-                tracing::error!(error = %e, "Failed to push to dead letter queue");
+            match ValkyQueue::new(queue.client().clone(), &dlq_name).await {
+                Ok(dlq) => {
+                    if let Err(e) = dlq.push_async(&job).await {
+                        tracing::error!(error = %e, "Failed to push to dead letter queue");
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to connect to dead letter queue");
+                }
             }
         }
     }

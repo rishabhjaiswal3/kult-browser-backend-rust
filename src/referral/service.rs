@@ -22,10 +22,10 @@ impl ReferralService {
     /// Fetches the authenticated player's referral code.
     /// If they don't have one, generates it, saves it to MongoDB, and caches it in Valkey.
     pub async fn get_or_create_code(&self, wallet_address: &str) -> Result<String, String> {
-        let normalized_wallet = wallet_address.trim().to_lowercase();
+        let wallet = wallet_address.trim().to_string();
 
         // 1. Fetch existing player
-        let player = match self.player_repo.find_by_wallet(&normalized_wallet).await? {
+        let player = match self.player_repo.find_by_wallet(&wallet).await? {
             Some(p) => p,
             None => return Err("Player not found".to_string()),
         };
@@ -46,12 +46,11 @@ impl ReferralService {
 
         // 4. Update MongoDB Player Document
         self.player_repo
-            .set_referral_code(&normalized_wallet, &new_code)
+            .set_referral_code(&wallet, &new_code)
             .await?;
 
         let cache_key = referral_code_cache_key(&new_code);
-        self.try_cache_referral_code(&cache_key, &normalized_wallet)
-            .await;
+        self.try_cache_referral_code(&cache_key, &wallet).await;
 
         Ok(new_code)
     }

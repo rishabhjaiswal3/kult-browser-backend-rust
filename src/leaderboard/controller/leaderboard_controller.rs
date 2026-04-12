@@ -1,5 +1,6 @@
 use crate::handler::{ApiResponse, AppError};
 use crate::leaderboard::controller::LeaderboardState;
+use crate::middleware::AuthPlayer;
 use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
@@ -55,17 +56,24 @@ pub async fn get_global_leaderboard(
     }
 }
 
-/// POST /api/leaderboard/refresh
+/// POST /api/leaderboard/refresh (requires authentication)
 #[utoipa::path(
     post,
     path = "/api/leaderboard/refresh",
+    security(
+        ("bearer_auth" = [])
+    ),
     responses(
         (status = 200, description = "Global leaderboard refreshed", body = crate::openapi::RefreshLeaderboardApiResponse),
+        (status = 401, description = "Missing or invalid bearer token", body = crate::openapi::ErrorResponse),
         (status = 500, description = "Internal server error", body = crate::openapi::ErrorResponse)
     ),
     tag = "Leaderboard"
 )]
-pub async fn refresh_global_leaderboard(State(state): State<LeaderboardState>) -> Response {
+pub async fn refresh_global_leaderboard(
+    State(state): State<LeaderboardState>,
+    _auth: AuthPlayer,
+) -> Response {
     match state.global_service.refresh_global_leaderboard().await {
         Ok(count) => ApiResponse::success(serde_json::json!({
             "refreshed": count,

@@ -28,6 +28,9 @@ async fn main() {
         }
     };
 
+    // Ensure indexes exist (idempotent, logs errors but doesn't crash)
+    mongo::ensure_indexes(&db).await;
+
     // Create a broadcast channel for graceful shutdown
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
@@ -65,7 +68,9 @@ async fn main() {
     match valkey_connect().await {
         Ok(valkey_client) => {
             // Migration worker
-            let migration_queue = ValkyQueue::new(valkey_client.clone(), MIGRATION_QUEUE.as_str());
+            let migration_queue = ValkyQueue::new(valkey_client.clone(), MIGRATION_QUEUE.as_str())
+                .await
+                .expect("Failed to create migration queue connection");
             let repo = MomentsRepository::new(&db);
             let worker = MigrationWorker::new(migration_queue, repo, shutdown_rx.clone());
 
@@ -76,7 +81,9 @@ async fn main() {
             tracing::info!("Migration worker spawned as background task");
 
             // Post scrape worker
-            let scrape_queue = ValkyQueue::new(valkey_client.clone(), SCRAPE_QUEUE.as_str());
+            let scrape_queue = ValkyQueue::new(valkey_client.clone(), SCRAPE_QUEUE.as_str())
+                .await
+                .expect("Failed to create scrape queue connection");
             let post_repo = PostRepository::new(&db);
             let scrape_worker = PostScrapeWorker::new(scrape_queue, post_repo, shutdown_rx.clone());
             let handle = tokio::spawn(async move {
@@ -86,7 +93,9 @@ async fn main() {
             tracing::info!("Post scrape worker spawned as background task");
 
             // Referral evaluation worker
-            let verify_queue = ValkyQueue::new(valkey_client.clone(), VERIFY_QUEUE.as_str());
+            let verify_queue = ValkyQueue::new(valkey_client.clone(), VERIFY_QUEUE.as_str())
+                .await
+                .expect("Failed to create verify queue connection");
             let player_repo = Arc::new(PlayerRepository::new(&db));
             let referral_service = Arc::new(ReferralService::new(player_repo, Some(valkey_client)));
             let eval_worker = EvaluationWorker::new(verify_queue, referral_service, db.clone());

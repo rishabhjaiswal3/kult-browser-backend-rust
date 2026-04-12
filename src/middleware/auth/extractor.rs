@@ -22,7 +22,7 @@ pub struct AuthPlayer {
     /// Player's MongoDB ObjectId (hex string)
     pub id: String,
 
-    /// Wallet address (lowercase)
+    /// Wallet address (case-preserved)
     pub wallet_address: String,
 
     /// Display name at token creation
@@ -89,7 +89,7 @@ where
 
         Ok(AuthPlayer {
             id: claims.player_id,
-            wallet_address: claims.walletAddress,
+            wallet_address: claims.wallet_address,
             name: claims.name,
         })
     }

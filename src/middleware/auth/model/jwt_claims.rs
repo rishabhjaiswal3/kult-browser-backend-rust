@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JwtClaims {
     /// Subject: wallet address (primary identifier)
-    pub walletAddress: String,
+    #[serde(rename = "walletAddress")]
+    pub wallet_address: String,
 
     /// Player's MongoDB ObjectId (hex string for JSON compat)
     pub player_id: String,

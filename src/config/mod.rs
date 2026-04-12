@@ -2,6 +2,7 @@
 // Central configuration module - loads all config from environment
 
 pub mod app_config;
+pub mod auth_config;
 pub mod bd_config;
 pub mod db_config;
 pub mod do_config;
@@ -13,6 +14,7 @@ pub mod zg_config;
 use once_cell::sync::Lazy;
 
 pub use app_config::AppConfig;
+pub use auth_config::AuthConfig;
 pub use bd_config::BdConfig;
 pub use db_config::DbConfig;
 pub use do_config::DoConfig;
@@ -25,6 +27,7 @@ pub use zg_config::ZgConfig;
 #[derive(Debug, Clone)]
 pub struct Config {
     pub app: AppConfig,
+    pub auth: AuthConfig,
     pub bright_data: BdConfig,
     pub db: DbConfig,
     pub do_spaces: DoConfig,
@@ -40,6 +43,7 @@ impl Config {
     fn from_env() -> Self {
         Self {
             app: AppConfig::from_env(),
+            auth: AuthConfig::from_env(),
             bright_data: BdConfig::from_env(),
             db: DbConfig::from_env(),
             do_spaces: DoConfig::from_env(),

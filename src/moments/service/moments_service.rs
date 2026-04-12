@@ -97,7 +97,7 @@ impl MomentsService {
         let moment = MomentModel {
             id: None,
             moment_id: moment_id.clone(),
-            player_wallet_address: wallet.trim().to_lowercase(),
+            player_wallet_address: wallet.trim().to_string(),
             asset_url: request
                 .asset_url
                 .as_deref()
@@ -255,7 +255,7 @@ impl MomentsService {
         page: u32,
         per_page: u32,
     ) -> Result<MomentListResponse, AppError> {
-        let wallet = wallet.trim().to_lowercase();
+        let wallet = wallet.trim().to_string();
         let page = if page == 0 { 1 } else { page };
         let per_page = per_page.min(50).max(1);
 
@@ -300,7 +300,7 @@ impl MomentsService {
             .map_err(|e| AppError::Internal(e))?
             .ok_or_else(|| AppError::NotFound("Moment not found".to_string()))?;
 
-        if existing.player_wallet_address != wallet.trim().to_lowercase() {
+        if existing.player_wallet_address != wallet.trim() {
             tracing::warn!(wallet = %wallet, owner = %existing.player_wallet_address, "Unauthorized update attempt");
             return Err(AppError::Forbidden(
                 "You can only update your own moments".to_string(),
@@ -402,7 +402,7 @@ impl MomentsService {
             .map_err(|e| AppError::Internal(e))?
             .ok_or_else(|| AppError::NotFound("Moment not found".to_string()))?;
 
-        if existing.player_wallet_address != wallet.trim().to_lowercase() {
+        if existing.player_wallet_address != wallet.trim() {
             tracing::warn!(wallet = %wallet, owner = %existing.player_wallet_address, "Unauthorized delete attempt");
             return Err(AppError::Forbidden(
                 "You can only delete your own moments".to_string(),
@@ -425,7 +425,7 @@ impl MomentsService {
         wallet: &str,
         moment_id: &str,
     ) -> Result<LikeMomentResponse, AppError> {
-        let wallet = wallet.trim().to_lowercase();
+        let wallet = wallet.trim().to_string();
 
         let existing = self
             .repo

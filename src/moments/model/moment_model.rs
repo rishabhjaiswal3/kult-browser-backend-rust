@@ -16,7 +16,7 @@ pub struct MomentModel {
     #[serde(rename = "momentId")]
     pub moment_id: String,
 
-    /// Owner's wallet address (lowercase, trimmed)
+    /// Owner's wallet address (case-preserved, trimmed)
     #[serde(rename = "playerWalletAddress")]
     pub player_wallet_address: String,
 

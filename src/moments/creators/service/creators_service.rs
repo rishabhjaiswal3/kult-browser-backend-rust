@@ -24,24 +24,24 @@ impl CreatorsService {
     }
 
     pub async fn get_me(&self, wallet: &str) -> Result<CreatorProfileResponse, AppError> {
-        let normalized_wallet = wallet.trim().to_lowercase();
+        let wallet = wallet.trim().to_string();
         let aggregate = self
             .creators_repository
-            .find_creator(&normalized_wallet)
+            .find_creator(&wallet)
             .await
             .map_err(AppError::Internal)?
             .ok_or_else(|| AppError::NotFound("Creator profile not found".to_string()))?;
 
         let rank = self
             .creators_repository
-            .find_rank(&normalized_wallet)
+            .find_rank(&wallet)
             .await
             .map_err(AppError::Internal)?
             .ok_or_else(|| AppError::NotFound("Creator profile not found".to_string()))?;
 
         let username = self
             .player_repository
-            .find_by_wallet(&normalized_wallet)
+            .find_by_wallet(&wallet)
             .await
             .map_err(AppError::Internal)?
             .map(|player| player.name);

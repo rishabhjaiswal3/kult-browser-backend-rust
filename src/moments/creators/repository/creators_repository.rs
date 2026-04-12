@@ -20,12 +20,9 @@ impl CreatorsRepository {
     }
 
     pub async fn find_creator(&self, wallet: &str) -> Result<Option<CreatorAggregate>, String> {
-        let normalized_wallet = wallet.trim().to_lowercase();
+        let wallet = wallet.trim();
         let mut pipeline = self.base_pipeline();
-        pipeline.insert(
-            0,
-            doc! { "$match": { "playerWalletAddress": &normalized_wallet } },
-        );
+        pipeline.insert(0, doc! { "$match": { "playerWalletAddress": wallet } });
 
         let mut cursor = self
             .moments_collection
@@ -83,7 +80,7 @@ impl CreatorsRepository {
     }
 
     pub async fn find_rank(&self, wallet: &str) -> Result<Option<u64>, String> {
-        let normalized_wallet = wallet.trim().to_lowercase();
+        let wallet = wallet.trim();
         let mut pipeline = self.base_pipeline();
         pipeline.push(doc! {
             "$sort": {
@@ -114,7 +111,7 @@ impl CreatorsRepository {
                 continue;
             };
 
-            if wallet_address == &normalized_wallet {
+            if wallet_address == wallet {
                 return Ok(Some(rank));
             }
             rank += 1;

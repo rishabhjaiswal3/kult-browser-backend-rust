@@ -3,6 +3,8 @@ use mongodb::Database;
 use serde_json::json;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
+use tower_governor::governor::GovernorConfigBuilder;
+use tower_governor::GovernorLayer;
 use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
 use tracing::Level;
 use utoipa::OpenApi;
@@ -66,11 +68,19 @@ async fn build_router(db: Database) -> Router {
         Ok(valkey_client) => {
             tracing::info!("Connected to Valkey for queues");
 
-            // Queue instances
-            let m_queue = ValkyQueue::new(valkey_client.clone(), MIGRATION_QUEUE.as_str());
-            let s_queue = ValkyQueue::new(valkey_client.clone(), SCRAPE_QUEUE.as_str());
-            let c_queue = ValkyQueue::new(valkey_client.clone(), referral::CLICK_QUEUE.as_str());
-            let v_queue = ValkyQueue::new(valkey_client.clone(), referral::VERIFY_QUEUE.as_str());
+            // Queue instances — async multiplexed connections
+            let m_queue = ValkyQueue::new(valkey_client.clone(), MIGRATION_QUEUE.as_str())
+                .await
+                .expect("Failed to create migration queue connection");
+            let s_queue = ValkyQueue::new(valkey_client.clone(), SCRAPE_QUEUE.as_str())
+                .await
+                .expect("Failed to create scrape queue connection");
+            let c_queue = ValkyQueue::new(valkey_client.clone(), referral::CLICK_QUEUE.as_str())
+                .await
+                .expect("Failed to create click queue connection");
+            let v_queue = ValkyQueue::new(valkey_client.clone(), referral::VERIFY_QUEUE.as_str())
+                .await
+                .expect("Failed to create verify queue connection");
 
             migration_queue = Some(m_queue);
             scrape_queue = Some(s_queue);
@@ -155,6 +165,25 @@ async fn build_router(db: Database) -> Router {
         )
         .layer(middleware::from_fn(crate::middleware::localize_response));
 
+    // Rate limiting: 30 requests per second per IP, burst up to 60
+    let governor_conf = GovernorConfigBuilder::default()
+        .per_second(2) // Refill interval: 1 token every 2 seconds → ~30/min sustained
+        .burst_size(60) // Allow bursts up to 60 requests
+        .finish()
+        .expect("Failed to build rate limiter config");
+    let governor_limiter = governor_conf.limiter().clone();
+    let governor_layer = GovernorLayer {
+        config: std::sync::Arc::new(governor_conf),
+    };
+
+    // Spawn a background task to clean up rate limiter state for expired IPs
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            governor_limiter.retain_recent();
+        }
+    });
+
     api_router
         .merge(
             SwaggerUi::new("/docs")
@@ -162,6 +191,7 @@ async fn build_router(db: Database) -> Router {
                 .config(SwaggerConfig::new(["openapi.json"])),
         )
         .fallback(fallback)
+        .layer(governor_layer)
         .layer(trace_layer)
         .layer(cors)
 }

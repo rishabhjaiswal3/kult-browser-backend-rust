@@ -13,7 +13,7 @@ pub struct PlayerModel {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<ObjectId>,
 
-    /// Unique identifier - Ethereum wallet address (lowercase, trimmed)
+    /// Unique identifier - Ethereum wallet address (case-preserved, trimmed)
     #[serde(rename = "walletAddress")]
     pub wallet_address: String,
 
