@@ -129,11 +129,10 @@ async fn build_router(db: Database) -> Router {
             .allow_credentials(true)
     };
 
-    let api_router = Router::new()
+    let mut api_router = Router::new()
         .route("/health", get(health_check))
         .nest("/content", content::routes(db.clone()))
         .nest("/games", game::routes(db.clone()))
-        .nest("/admin", admin::routes(db.clone()))
         .nest(
             "/leaderboard",
             leaderboard::routes(db.clone(), client.clone()),
@@ -162,8 +161,23 @@ async fn build_router(db: Database) -> Router {
             "/r",
             referral::redirect_route::router()
                 .with_state(referral::redirect_route::RedirectAppState { click_analytics }),
-        )
-        .layer(middleware::from_fn(crate::middleware::localize_response));
+        );
+
+    if CONFIG.app.admin_routes_enabled() {
+        tracing::warn!(
+            environment = %CONFIG.app.environment,
+            "Admin routes enabled"
+        );
+        api_router = api_router.nest("/admin", admin::routes(db.clone()));
+    } else {
+        tracing::info!(
+            environment = %CONFIG.app.environment,
+            "Admin routes disabled"
+        );
+        api_router = api_router.nest("/admin", Router::new().fallback(fallback));
+    }
+
+    let api_router = api_router.layer(middleware::from_fn(crate::middleware::localize_response));
 
     // Rate limiting: 30 requests per second per IP, burst up to 60
     let governor_conf = GovernorConfigBuilder::default()
@@ -211,10 +225,13 @@ pub async fn run(
 
     let listener = TcpListener::bind(&addr).await?;
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            let _ = shutdown_rx.changed().await;
-            tracing::info!("HTTP Server received shutdown signal.");
-        })
-        .await
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move {
+        let _ = shutdown_rx.changed().await;
+        tracing::info!("HTTP Server received shutdown signal.");
+    })
+    .await
 }

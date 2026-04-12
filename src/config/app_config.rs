@@ -12,6 +12,8 @@ pub struct AppConfig {
     pub host: String,
     /// Application name (default: kult-browser-backend)
     pub app_name: String,
+    /// Runtime environment. Admin routes are enabled only when this is "dev".
+    pub environment: String,
     /// CORS allowed origins (default: *)
     pub cors_origins: Vec<String>,
     /// Log level (default: info)
@@ -32,6 +34,12 @@ impl AppConfig {
 
             app_name: env::var("APP_NAME").unwrap_or_else(|_| "kult-browser-backend".to_string()),
 
+            environment: env::var("ENVIRONMENT")
+                .or_else(|_| env::var("APP_ENV"))
+                .unwrap_or_else(|_| "prod".to_string())
+                .trim()
+                .to_ascii_lowercase(),
+
             cors_origins: env::var("CORS_ORIGINS")
                 .unwrap_or_else(|_| "*".to_string())
                 .split(',')
@@ -40,5 +48,9 @@ impl AppConfig {
 
             log_level: env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string()),
         }
+    }
+
+    pub fn admin_routes_enabled(&self) -> bool {
+        self.environment == "dev"
     }
 }
