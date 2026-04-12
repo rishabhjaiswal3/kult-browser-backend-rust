@@ -86,7 +86,10 @@ impl PostScrapeWorker {
                         Ok(None) => continue, // Timeout, loop back
                         Err(e) => {
                             tracing::error!(error = %e, "Queue pop error, retrying in 5s");
-                            tokio::time::sleep(Duration::from_secs(5)).await;
+                            if !Self::sleep_or_shutdown(&mut self.shutdown_rx, Duration::from_secs(5)).await {
+                                tracing::info!("PostScrapeWorker received shutdown signal during retry sleep. Exiting gracefully.");
+                                break;
+                            }
                         }
                     }
                 }
@@ -115,7 +118,15 @@ impl PostScrapeWorker {
                 tracing::error!(error = %e, "Failed to ACK young job");
             }
 
-            tokio::time::sleep(Duration::from_secs(CONFIG.scrape.requeue_sleep_secs)).await;
+            let mut shutdown_rx = self.shutdown_rx.clone();
+            if !Self::sleep_or_shutdown(
+                &mut shutdown_rx,
+                Duration::from_secs(CONFIG.scrape.requeue_sleep_secs),
+            )
+            .await
+            {
+                tracing::info!("PostScrapeWorker received shutdown signal during requeue sleep.");
+            }
             return;
         }
 
@@ -182,6 +193,16 @@ impl PostScrapeWorker {
                     tracing::error!(error = %e, "Failed to connect to dead letter queue");
                 }
             }
+        }
+    }
+
+    async fn sleep_or_shutdown(
+        shutdown_rx: &mut watch::Receiver<bool>,
+        duration: Duration,
+    ) -> bool {
+        tokio::select! {
+            _ = shutdown_rx.changed() => !*shutdown_rx.borrow(),
+            _ = tokio::time::sleep(duration) => true,
         }
     }
 }

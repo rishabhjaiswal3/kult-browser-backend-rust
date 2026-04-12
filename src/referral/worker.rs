@@ -8,6 +8,7 @@ use chrono::Utc;
 use mongodb::bson::doc;
 use mongodb::Database;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::watch;
 
 pub struct EvaluationWorker {
@@ -138,11 +139,24 @@ impl EvaluationWorker {
                         }
                         Err(e) => {
                             tracing::error!("Error polling verify queue: {}", e);
-                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                            if !Self::sleep_or_shutdown(&mut shutdown_rx, Duration::from_secs(1)).await {
+                                tracing::info!("EvaluationWorker received shutdown signal during retry sleep. Exiting...");
+                                break;
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+
+    async fn sleep_or_shutdown(
+        shutdown_rx: &mut watch::Receiver<bool>,
+        duration: Duration,
+    ) -> bool {
+        tokio::select! {
+            _ = shutdown_rx.changed() => !*shutdown_rx.borrow(),
+            _ = tokio::time::sleep(duration) => true,
         }
     }
 }

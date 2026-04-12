@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{watch, Semaphore};
+use tokio::time::timeout;
 
 use crate::external::spaces;
 use crate::external::storage;
@@ -39,9 +40,11 @@ pub use crate::redis::keys::MOMENTS_ZERO_G_MIGRATION_DEAD_LETTER_QUEUE as DEAD_L
 /// - Process: download, upload to 0G, update MongoDB, cleanup
 /// - Unconditionally `ack_async`s the raw payload when done (even on retry/DLQ)
 /// - Listens for shutdown signal to exit gracefully
-/// Max concurrent migration jobs. Kept low for single-CPU deployments;
-/// each job is I/O-bound (download + upload) so mild concurrency helps throughput.
-const MAX_CONCURRENT_JOBS: usize = 3;
+/// Max concurrent migration jobs. Keep this at 1 for the single-CPU DO web service.
+const MAX_CONCURRENT_JOBS: usize = 1;
+const IDLE_POLL_TIMEOUT_SECS: u32 = 1;
+const QUEUE_ERROR_RETRY_SECS: u64 = 1;
+const SHUTDOWN_DRAIN_TIMEOUT_SECS: u64 = 20;
 
 pub struct MigrationWorker {
     queue: ValkyQueue,
@@ -62,7 +65,7 @@ impl MigrationWorker {
             queue,
             repo,
             max_retries: 3,
-            poll_timeout_secs: 5,
+            poll_timeout_secs: IDLE_POLL_TIMEOUT_SECS,
             shutdown_rx,
         }
     }
@@ -99,9 +102,7 @@ impl MigrationWorker {
                 _ = self.shutdown_rx.changed() => {
                     if *self.shutdown_rx.borrow() {
                         tracing::info!("MigrationWorker received shutdown signal. Waiting for in-flight jobs...");
-                        // Wait for all in-flight jobs to complete
-                        let _ = semaphore.acquire_many(MAX_CONCURRENT_JOBS as u32).await;
-                        tracing::info!("MigrationWorker: all in-flight jobs finished. Exiting.");
+                        Self::wait_for_in_flight(semaphore.clone()).await;
                         break;
                     }
                 }
@@ -139,12 +140,48 @@ impl MigrationWorker {
                         }
                         Err(e) => {
                             drop(permit);
-                            tracing::error!(error = %e, "Queue pop error, retrying in 5s");
-                            tokio::time::sleep(Duration::from_secs(5)).await;
+                            tracing::error!(error = %e, "Queue pop error, retrying shortly");
+                            if !Self::sleep_or_shutdown(&mut self.shutdown_rx, Duration::from_secs(QUEUE_ERROR_RETRY_SECS)).await {
+                                tracing::info!("MigrationWorker received shutdown signal during retry sleep. Waiting for in-flight jobs...");
+                                Self::wait_for_in_flight(semaphore.clone()).await;
+                                break;
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+
+    async fn wait_for_in_flight(semaphore: Arc<Semaphore>) {
+        match timeout(
+            Duration::from_secs(SHUTDOWN_DRAIN_TIMEOUT_SECS),
+            semaphore.acquire_many(MAX_CONCURRENT_JOBS as u32),
+        )
+        .await
+        {
+            Ok(Ok(_permit)) => {
+                tracing::info!("MigrationWorker: all in-flight jobs finished. Exiting.");
+            }
+            Ok(Err(_)) => {
+                tracing::warn!("MigrationWorker: semaphore closed during shutdown.");
+            }
+            Err(_) => {
+                tracing::warn!(
+                    timeout_secs = SHUTDOWN_DRAIN_TIMEOUT_SECS,
+                    "MigrationWorker: timed out waiting for in-flight jobs; unacked jobs will be recovered on next startup"
+                );
+            }
+        }
+    }
+
+    async fn sleep_or_shutdown(
+        shutdown_rx: &mut watch::Receiver<bool>,
+        duration: Duration,
+    ) -> bool {
+        tokio::select! {
+            _ = shutdown_rx.changed() => !*shutdown_rx.borrow(),
+            _ = tokio::time::sleep(duration) => true,
         }
     }
 

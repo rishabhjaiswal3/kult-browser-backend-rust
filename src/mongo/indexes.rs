@@ -205,6 +205,7 @@ async fn ensure_agent_indexes(db: &Database) -> Result<(), mongodb::error::Error
     coll.create_index(
         IndexModel::builder()
             .keys(doc! { "ownerWallet": 1 })
+            .options(IndexOptions::builder().unique(true).build())
             .build(),
     )
     .await?;
