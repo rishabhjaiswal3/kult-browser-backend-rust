@@ -41,17 +41,12 @@ impl SpacesService {
     }
 
     /// Generate a presigned URL for uploading a file (PUT)
-    pub async fn generate_presigned_upload_url(
+    pub async fn generate_presigned_upload_url_for_key(
         &self,
-        filename: &str,
-        _content_type: &str,
+        object_key: &str,
     ) -> Result<aws_sdk_s3::presigning::PresignedRequest, String> {
         let config = &CONFIG.do_spaces;
         let expiration = Duration::from_secs(config.presigned_expiration);
-
-        // Construct key with normalized upload prefix.
-        let upload_path = config.effective_upload_path();
-        let key = format!("{}/{}", upload_path, filename);
 
         // Create presigning config
         let presigning_config = PresigningConfig::builder()
@@ -64,7 +59,7 @@ impl SpacesService {
             .client
             .put_object()
             .bucket(&self.bucket)
-            .key(&key)
+            .key(object_key)
             // Make uploaded objects publicly readable.
             // This is signed into the URL as x-amz-acl and must be sent by the client.
             .acl(aws_sdk_s3::types::ObjectCannedAcl::PublicRead)
@@ -77,6 +72,17 @@ impl SpacesService {
 
         Ok(presigned_request)
     }
+
+    pub fn public_url_for_key(&self, object_key: &str) -> String {
+        let endpoint_clean = CONFIG
+            .do_spaces
+            .endpoint
+            .trim_start_matches("https://")
+            .trim_start_matches("http://");
+
+        format!("https://{}.{}/{}", self.bucket, endpoint_clean, object_key)
+    }
+
     /// Check if a file exists in the bucket by its public URL
     pub async fn check_file_exists(&self, public_url: &str) -> bool {
         // Parse key from URL

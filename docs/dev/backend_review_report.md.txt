@@ -1,0 +1,957 @@
+# Backend Review Report
+
+This report covers the flaws noticed during the senior-engineer review of `browser-deployed/kult-browser-backend-rust`.
+
+Each point has:
+1. Theoretical flaw in easy language
+2. Code where the flaw exists
+3. Theoretical solution in easy language
+4. Solution code
+
+## 1. Wallet Address Case Was Being Changed
+
+### 1. Theoretical Flaw
+
+Ethereum wallet addresses can be checksum-cased. If the backend lowercases them, it loses the exact address format sent by the wallet/client. That can break lookups, signatures, integrations, and user expectations.
+
+The backend should save and search the wallet address exactly as the user authenticated with it, except for safe boundary cleanup like trimming accidental whitespace.
+
+Status: this was fixed in the latest patch.
+
+### 2. Code Where Flaw Existed
+
+Previously, wallet values were lowercased in multiple paths.
+
+`src/player/service/player_service.rs`
+
+```rust
+let wallet = request.wallet_address.trim().to_lowercase();
+```
+
+`src/player/repository/player_repository.rs`
+
+```rust
+let normalized = wallet_address.trim().to_lowercase();
+
+self.collection
+    .find_one(doc! { "walletAddress": &normalized })
+    .await
+```
+
+`src/moments/service/moments_service.rs`
+
+```rust
+player_wallet_address: wallet.trim().to_lowercase(),
+```
+
+`src/moments/comments/service/comments_service.rs`
+
+```rust
+author_wallet_address: wallet.trim().to_lowercase(),
+```
+
+### 3. Theoretical Solution
+
+Keep wallet casing unchanged everywhere. Do not lowercase before insert, lookup, ownership check, leaderboard lookup, referral scoring, or agent lookup.
+
+The only acceptable cleanup is trimming whitespace at API boundaries.
+
+### 4. Solution Code
+
+`src/player/service/player_service.rs`
+
+```rust
+let wallet = request.wallet_address.trim().to_string();
+```
+
+`src/player/repository/player_repository.rs`
+
+```rust
+let wallet = wallet_address.trim();
+
+self.collection
+    .find_one(doc! { "walletAddress": wallet })
+    .await
+```
+
+`src/moments/service/moments_service.rs`
+
+```rust
+player_wallet_address: wallet.trim().to_string(),
+```
+
+`src/moments/comments/service/comments_service.rs`
+
+```rust
+author_wallet_address: wallet.trim().to_string(),
+```
+
+## 2. Login Issues JWT Without Proving Wallet Ownership
+
+### 1. Theoretical Flaw
+
+The login API trusts any submitted `walletAddress`. A user can send someone else's wallet address and receive a valid JWT for that wallet.
+
+That means all JWT-protected actions become impersonable: profile changes, moments, comments, likes, uploads, referral actions, and leaderboard refresh if allowed.
+
+### 2. Code Where Flaw Exists
+
+`src/player/dto/login_dto.rs`
+
+```rust
+pub struct LoginRequest {
+    #[serde(rename = "walletAddress")]
+    pub wallet_address: String,
+
+    pub name: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+    pub referral_code: Option<String>,
+}
+```
+
+There is no nonce, message, or signature field.
+
+`src/player/service/player_service.rs`
+
+```rust
+let wallet = request.wallet_address.trim().to_string();
+
+let (player, is_new) = self
+    .player_repo
+    .find_or_create(&wallet, &name, metadata)
+    .await?;
+
+let token = AuthService::sign_token(&player)?;
+```
+
+The token is signed after only trusting the submitted wallet string.
+
+### 3. Theoretical Solution
+
+Use a wallet signature login flow.
+
+Simple flow:
+- Backend creates a random nonce for a wallet.
+- Frontend asks wallet to sign a clear login message containing that nonce.
+- Backend verifies the signature recovers the same wallet address.
+- Backend consumes the nonce so it cannot be reused.
+- Only then create or fetch the player and issue the JWT.
+
+Prefer SIWE/EIP-4361 if this is a web3 login.
+
+### 4. Solution Code
+
+Example DTO shape:
+
+```rust
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct LoginRequest {
+    #[serde(rename = "walletAddress")]
+    pub wallet_address: String,
+    pub message: String,
+    pub signature: String,
+    pub nonce: String,
+    pub name: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+    #[serde(default, rename = "referralCode")]
+    pub referral_code: Option<String>,
+}
+```
+
+Example service gate:
+
+```rust
+pub async fn login(
+    &self,
+    request: LoginRequest,
+    ip_address: &str,
+) -> Result<LoginResponse, AppError> {
+    let wallet = request.wallet_address.trim().to_string();
+
+    self.nonce_store
+        .consume_nonce(&wallet, &request.nonce)
+        .await
+        .map_err(|_| AppError::Unauthorized("Invalid or expired nonce".to_string()))?;
+
+    let verified_wallet = WalletSignatureVerifier::recover_wallet(
+        &request.message,
+        &request.signature,
+    )
+    .map_err(|_| AppError::Unauthorized("Invalid wallet signature".to_string()))?;
+
+    if verified_wallet != wallet {
+        return Err(AppError::Unauthorized(
+            "Signature does not match walletAddress".to_string(),
+        ));
+    }
+
+    let (player, is_new) = self
+        .player_repo
+        .find_or_create(&wallet, &name, metadata)
+        .await
+        .map_err(AppError::Internal)?;
+
+    let token = AuthService::sign_token(&player).map_err(AppError::Internal)?;
+    // build response...
+}
+```
+
+## 3. Admin Mutation Routes Are Public
+
+### 1. Theoretical Flaw
+
+Admin endpoints can create and delete game leaderboard config without any admin check. If exposed, anyone can change leaderboard behavior.
+
+This is dangerous because the config includes database, collection, and key names used by aggregation code.
+
+Status: mitigated by disabling all `/api/admin` routes unless `ENVIRONMENT=dev` or `APP_ENV=dev`.
+
+### 2. Code Where Flaw Exists
+
+`src/admin/route/game_leaderboard_config_routes.rs`
+
+```rust
+Router::new()
+    .route(
+        "/game-leaderboard-config",
+        post(insert_game_leaderboard_config),
+    )
+    .route(
+        "/game-leaderboard-config/:identification",
+        delete(delete_game_leaderboard_config),
+    )
+    .with_state(state)
+```
+
+Handlers do not require `AuthPlayer`, admin role, or an admin API key:
+
+```rust
+async fn insert_game_leaderboard_config(
+    State(state): State<GameLeaderboardConfigAdminState>,
+    payload: Result<Json<GameLeaderboardConfig>, axum::extract::rejection::JsonRejection>,
+) -> Response
+```
+
+### 3. Theoretical Solution
+
+Protect all admin routes with a separate admin guard.
+
+Minimum acceptable option:
+- Require an `x-admin-api-key` header.
+- Load the key from environment.
+- Reject missing or wrong key with `401`.
+
+Better option:
+- Use real user auth.
+- Store admin roles/permissions.
+- Require `AuthAdmin` extractor for admin routes.
+
+Current short-term fix:
+- Add an environment flag.
+- Mount admin routes only in `dev`.
+- In `prod`, or when the flag is missing, `/api/admin/*` is not registered.
+
+### 4. Solution Code
+
+Environment-mode gate:
+
+```rust
+environment: env::var("ENVIRONMENT")
+    .or_else(|_| env::var("APP_ENV"))
+    .unwrap_or_else(|_| "prod".to_string())
+    .trim()
+    .to_ascii_lowercase(),
+
+pub fn admin_routes_enabled(&self) -> bool {
+    self.environment == "dev"
+}
+```
+
+Router-level disable:
+
+```rust
+let mut api_router = Router::new()
+    .route("/health", get(health_check))
+    .nest("/content", content::routes(db.clone()))
+    .nest("/games", game::routes(db.clone()));
+
+if CONFIG.app.admin_routes_enabled() {
+    api_router = api_router.nest("/admin", admin::routes(db.clone()));
+}
+```
+
+Stronger future fix:
+
+Example minimal admin API key extractor:
+
+```rust
+pub struct AdminApiKey;
+
+#[async_trait]
+impl<S> FromRequestParts<S> for AdminApiKey
+where
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        let expected = std::env::var("ADMIN_API_KEY")
+            .map_err(|_| AppError::Internal("ADMIN_API_KEY missing".to_string()))?;
+
+        let actual = parts
+            .headers
+            .get("x-admin-api-key")
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| AppError::Unauthorized("Missing admin key".to_string()))?;
+
+        if actual != expected {
+            return Err(AppError::Unauthorized("Invalid admin key".to_string()));
+        }
+
+        Ok(AdminApiKey)
+    }
+}
+```
+
+Apply to handlers:
+
+```rust
+async fn insert_game_leaderboard_config(
+    _admin: AdminApiKey,
+    State(state): State<GameLeaderboardConfigAdminState>,
+    payload: Result<Json<GameLeaderboardConfig>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    // unchanged
+}
+```
+
+## 4. Any Authenticated User Can Refresh Global Leaderboard
+
+### 1. Theoretical Flaw
+
+Refreshing global leaderboard can be expensive and changes shared data. It should be an admin/background job action, not something any user can trigger.
+
+Even with JWT auth, this is risky. With the current wallet-login weakness, it is effectively public.
+
+Status: the route now requires `AuthPlayer`, but it still needs an admin-level check.
+
+### 2. Code Where Flaw Exists
+
+`src/leaderboard/controller/leaderboard_controller.rs`
+
+```rust
+pub async fn refresh_global_leaderboard(
+    State(state): State<LeaderboardState>,
+    _auth: AuthPlayer,
+) -> Response {
+    match state.global_service.refresh_global_leaderboard().await {
+        Ok(count) => ApiResponse::success(serde_json::json!({
+            "refreshed": count,
+            "message": format!("Refreshed {} entries", count)
+        }))
+        .into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+```
+
+This checks only that the request has a valid user token. It does not check admin permission.
+
+### 3. Theoretical Solution
+
+Make refresh admin-only or move it fully to a scheduled worker.
+
+If it remains as an HTTP endpoint, reuse the same admin guard from admin routes.
+
+### 4. Solution Code
+
+```rust
+pub async fn refresh_global_leaderboard(
+    _admin: AdminApiKey,
+    State(state): State<LeaderboardState>,
+) -> Response {
+    match state.global_service.refresh_global_leaderboard().await {
+        Ok(count) => ApiResponse::success(serde_json::json!({
+            "refreshed": count,
+            "message": format!("Refreshed {} entries", count)
+        }))
+        .into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+```
+
+## 5. JWT Secret Falls Back To A Known Value
+
+### 1. Theoretical Flaw
+
+If `JWT_SECRET` is missing, the backend uses `"dev-secret-change-me"`. That value is public in the source code.
+
+If this fallback ever runs in production, attackers can forge JWTs.
+
+### 2. Code Where Flaw Exists
+
+`src/config/auth_config.rs`
+
+```rust
+jwt_secret: env::var("JWT_SECRET")
+    .unwrap_or_else(|_| "dev-secret-change-me".to_string()),
+```
+
+`src/middleware/auth/service.rs`
+
+```rust
+let key = EncodingKey::from_secret(CONFIG.auth.jwt_secret.as_bytes());
+```
+
+### 3. Theoretical Solution
+
+Fail startup if `JWT_SECRET` is missing or weak.
+
+Development should set a local secret in `.env`; production must set a strong secret in the deployment environment.
+
+### 4. Solution Code
+
+```rust
+impl AuthConfig {
+    pub fn from_env() -> Self {
+        let jwt_secret = env::var("JWT_SECRET")
+            .expect("JWT_SECRET must be set");
+
+        if jwt_secret.len() < 32 {
+            panic!("JWT_SECRET must be at least 32 characters");
+        }
+
+        Self {
+            jwt_secret,
+            jwt_expiration_days: env::var("JWT_EXPIRATION_DAYS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(7),
+        }
+    }
+}
+```
+
+## 6. Presigned Upload Lets Client Choose Public Object Key
+
+### 1. Theoretical Flaw
+
+The upload endpoint lets the client provide any filename. The backend then builds a storage key from that filename and returns a public URL.
+
+This can cause:
+- Object overwrite if two users choose the same filename.
+- Messy or unsafe object names.
+- Users uploading unexpected file types.
+- Public files being created without strong validation.
+
+Status: fixed. The request shape is still compatible, but `filename` no longer controls the object key. The backend validates `content_type` and generates a unique key under `<upload_path>/<wallet>/<nanoid>.<ext>`.
+
+### 2. Code Where Flaw Exists
+
+`src/upload/controller.rs`
+
+```rust
+pub struct PresignRequest {
+    pub filename: String,
+    pub content_type: String,
+}
+```
+
+```rust
+let key = format!("{}/{}", upload_path, payload.filename);
+let public_url = format!("https://{}.{}/{}", config.bucket, endpoint_clean, key);
+```
+
+`src/external/digital_ocean/spaces/service.rs`
+
+```rust
+let key = format!("{}/{}", upload_path, filename);
+```
+
+```rust
+.acl(aws_sdk_s3::types::ObjectCannedAcl::PublicRead)
+```
+
+Also, `content_type` is currently ignored:
+
+```rust
+pub async fn generate_presigned_upload_url(
+    &self,
+    filename: &str,
+    _content_type: &str,
+) -> Result<aws_sdk_s3::presigning::PresignedRequest, String>
+```
+
+### 3. Theoretical Solution
+
+The server should generate the storage key, not the client.
+
+Rules:
+- Validate content type.
+- Generate a unique object key with `wallet/moment/nanoid`.
+- Preserve only a safe extension.
+- Optionally sign `content_length` constraints if supported.
+- Prefer private objects unless public access is explicitly required.
+
+### 4. Solution Code
+
+Controller:
+
+```rust
+pub async fn generate_presigned_url(
+    auth: AuthPlayer,
+    Json(payload): Json<PresignRequest>,
+) -> impl IntoResponse {
+    let extension = match payload.content_type.as_str() {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/gif" => "gif",
+        "video/mp4" => "mp4",
+        _ => {
+            return AppError::BadRequest("Unsupported content_type".to_string())
+                .into_response();
+        }
+    };
+
+    let object_key = format!(
+        "{}/{}/{}.{}",
+        CONFIG.do_spaces.effective_upload_path(),
+        safe_path_segment(&auth.wallet_address),
+        nanoid::nanoid!(),
+        extension
+    );
+
+    let presigned_request = service
+        .generate_presigned_upload_url_for_key(&object_key)
+        .await?;
+
+    // build response from object_key
+}
+```
+
+Spaces service:
+
+```rust
+pub async fn generate_presigned_upload_url_for_key(
+    &self,
+    object_key: &str,
+) -> Result<aws_sdk_s3::presigning::PresignedRequest, String> {
+    let presigning_config = PresigningConfig::builder()
+        .expires_in(Duration::from_secs(CONFIG.do_spaces.presigned_expiration))
+        .build()
+        .map_err(|e| format!("Failed to create presigning config: {}", e))?;
+
+    self.client
+        .put_object()
+        .bucket(&self.bucket)
+        .key(object_key)
+        .presigned(presigning_config)
+        .await
+        .map_err(|e| format!("Failed to generate presigned URL: {}", e))
+}
+```
+
+## 7. Migration Worker ACKs Job Even If Mongo Update Fails
+
+### 1. Theoretical Flaw
+
+The migration worker downloads a file, uploads it to 0G, then writes the 0G hash to MongoDB.
+
+If the 0G upload succeeds but MongoDB update fails, the worker logs the error but still acknowledges the queue job. The queue will never retry it, and the uploaded hash can be lost.
+
+### 2. Code Where Flaw Exists
+
+`src/moments/worker/migration_worker.rs`
+
+```rust
+match repo
+    .update_zg_hash(&job.asset_id, &upload_result.root_hash)
+    .await
+{
+    Ok(true) => {
+        tracing::info!("Updated asset_zg_hash in database");
+    }
+    Ok(false) => {
+        tracing::warn!("Moment not found in database — hash not updated");
+    }
+    Err(e) => {
+        tracing::error!(
+            error = %e,
+            "Failed to update database — 0G hash may be lost"
+        );
+    }
+}
+```
+
+The caller later ACKs unconditionally:
+
+```rust
+Self::process_job_static(&q, &r, max_retries, job).await;
+
+if let Err(e) = q.ack_async(&raw_data).await {
+    tracing::error!(error = %e, "Failed to ACK completed job");
+}
+```
+
+### 3. Theoretical Solution
+
+Treat DB update failure as a job failure.
+
+The job should be retried or sent to a dead-letter queue with the already-created root hash. Do not ACK successful 0G upload if the DB state was not updated.
+
+### 4. Solution Code
+
+Return a result from job processing:
+
+```rust
+async fn process_job_static(
+    queue: &ValkyQueue,
+    repo: &MomentsRepository,
+    max_retries: u32,
+    job: MigrationJob,
+) -> Result<(), String> {
+    let download = spaces::download_file(&job.asset_url).await?;
+    let local_path = download.local_path.to_string_lossy().to_string();
+    let upload_result = storage::upload_file(&local_path)?;
+
+    match repo.update_zg_hash(&job.asset_id, &upload_result.root_hash).await {
+        Ok(true) => {
+            spaces::cleanup(&download.local_path);
+            Ok(())
+        }
+        Ok(false) => {
+            spaces::cleanup(&download.local_path);
+            Err("Moment not found while saving 0G hash".to_string())
+        }
+        Err(e) => {
+            spaces::cleanup(&download.local_path);
+            Err(format!("Failed to save 0G hash: {}", e))
+        }
+    }
+}
+```
+
+Only ACK on success:
+
+```rust
+let result = Self::process_job_static(&q, &r, max_retries, job.clone()).await;
+
+match result {
+    Ok(()) => {
+        if let Err(e) = q.ack_async(&raw_data).await {
+            tracing::error!(error = %e, "Failed to ACK completed job");
+        }
+    }
+    Err(e) => {
+        tracing::error!(error = %e, "Migration job failed");
+        Self::handle_failure_static(&q, max_retries, job).await;
+        let _ = q.ack_async(&raw_data).await;
+    }
+}
+```
+
+## 8. Moment Like Index Used Wrong Wallet Field
+
+### 1. Theoretical Flaw
+
+The `MomentLikeModel` stores wallet under `authorWalletAddress`, but the Mongo index was created on `walletAddress`.
+
+That means the intended compound unique index did not match the actual data shape. The deterministic `_id` still prevented duplicates, but the index was misleading and not useful for the real query shape.
+
+Status: this was fixed in the latest patch.
+
+### 2. Code Where Flaw Existed
+
+`src/moments/model/moment_like_model.rs`
+
+```rust
+#[serde(rename_all = "camelCase")]
+pub struct MomentLikeModel {
+    #[serde(rename = "_id")]
+    pub id: String,
+    pub moment_id: String,
+    pub author_wallet_address: String,
+    pub created_at: DateTime,
+}
+```
+
+Old index in `src/mongo/indexes.rs`:
+
+```rust
+likes
+    .create_index(
+        IndexModel::builder()
+            .keys(doc! { "momentId": 1, "walletAddress": 1 })
+            .options(IndexOptions::builder().unique(true).build())
+            .build(),
+    )
+    .await?;
+```
+
+### 3. Theoretical Solution
+
+Create indexes using the actual serialized Mongo field names. Here, `author_wallet_address` serializes to `authorWalletAddress`.
+
+### 4. Solution Code
+
+`src/mongo/indexes.rs`
+
+```rust
+likes
+    .create_index(
+        IndexModel::builder()
+            .keys(doc! { "momentId": 1, "authorWalletAddress": 1 })
+            .options(IndexOptions::builder().unique(true).build())
+            .build(),
+    )
+    .await?;
+```
+
+## 9. Doctests Fail Because Examples Are Not Complete Rust
+
+### 1. Theoretical Flaw
+
+Rust doc examples are compiled by `cargo test --doc` unless marked otherwise. Two examples are written like pseudocode, so the doc test suite fails.
+
+This makes CI noisy and can hide real test failures.
+
+### 2. Code Where Flaw Exists
+
+`src/middleware/auth/extractor.rs`
+
+```rust
+/// ```rust
+/// async fn my_handler(auth: AuthPlayer) -> impl IntoResponse {
+///     format!("Hello, {}", auth.wallet_address)
+/// }
+/// ```
+```
+
+`src/handler/success_handler.rs`
+
+```rust
+/// ```rust
+/// pub async fn my_handler() -> ApiResult<MyData> {
+///     let data = service.get_data()?;
+///     Ok(ApiResponse::success(data))
+/// }
+/// ```
+```
+
+### 3. Theoretical Solution
+
+Either make doc examples fully compilable or mark them as `ignore` / `no_run`.
+
+For examples that are just illustrative and depend on fake types like `service` or `MyData`, use `ignore`.
+
+### 4. Solution Code
+
+`src/middleware/auth/extractor.rs`
+
+```rust
+/// ```rust,ignore
+/// use axum::response::IntoResponse;
+/// use kult_browser_backend_rust::AuthPlayer;
+///
+/// async fn my_handler(auth: AuthPlayer) -> impl IntoResponse {
+///     format!("Hello, {}", auth.wallet_address)
+/// }
+/// ```
+```
+
+`src/handler/success_handler.rs`
+
+```rust
+/// ```rust,ignore
+/// use kult_browser_backend_rust::handler::{ApiResponse, ApiResult};
+///
+/// pub async fn my_handler() -> ApiResult<MyData> {
+///     let data = service.get_data()?;
+///     Ok(ApiResponse::success(data))
+/// }
+/// ```
+```
+
+## 10. Quality Gates Are Not Clean
+
+### 1. Theoretical Flaw
+
+The project should have a reliable set of commands that always pass before deployment. Right now:
+- `cargo test --doc` fails because of doc examples.
+- `cargo fmt` fails because of trailing whitespace in a dev bin file.
+- `cargo check --all-targets --all-features` fails because a dev-bin test calls `MomentsService::with_queue` with the wrong number of args.
+- `cargo clippy --all-targets --all-features -- -D warnings` fails on multiple lints.
+
+This makes it harder to know if a new change broke something.
+
+### 2. Code Where Flaw Exists
+
+`bin/test/test_moment_migration_pipeline.rs`
+
+```rust
+let service = MomentsService::with_queue(
+    repo.clone(),
+    queue.clone(),
+    spaces_service.clone(),
+);
+```
+
+But `src/moments/service/moments_service.rs` expects:
+
+```rust
+pub fn with_queue(
+    repo: MomentsRepository,
+    likes_repo: MomentLikesRepository,
+    queue: ValkyQueue,
+    spaces_service: SpacesService,
+) -> Self
+```
+
+`bin/test/test_prod_flow.rs` has trailing whitespace that blocks `cargo fmt`.
+
+Clippy also reported issues such as:
+
+```rust
+pub enum ContentItem {
+    Game(crate::game::model::GameModel),
+    Mapped(MappedContentItem),
+}
+```
+
+The `GameModel` variant is much larger than the other enum variant.
+
+### 3. Theoretical Solution
+
+Define a small CI command set and keep it green:
+
+```bash
+cargo fmt --check
+cargo check --all-targets --all-features
+cargo test --lib --tests
+cargo test --doc
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+Then fix the current blockers one by one.
+
+### 4. Solution Code
+
+Fix dev-bin constructor:
+
+```rust
+let likes_repo = MomentLikesRepository::new(&db);
+
+let service = MomentsService::with_queue(
+    repo.clone(),
+    likes_repo,
+    queue.clone(),
+    spaces_service.clone(),
+);
+```
+
+Fix large enum:
+
+```rust
+pub enum ContentItem {
+    Game(Box<crate::game::model::GameModel>),
+    Mapped(MappedContentItem),
+}
+```
+
+Fix doctests using `rust,ignore` as shown in point 9.
+
+Fix formatting by removing trailing whitespace in `bin/test/test_prod_flow.rs`.
+
+## 11. Background Worker Shutdown Was Too Slow
+
+### 1. Theoretical Flaw
+
+The backend runs background workers beside the HTTP server. On shutdown, the HTTP server stopped quickly, but the migration worker could keep the process alive for several extra seconds while waiting on queue polling or retry sleeps.
+
+For a single-CPU DigitalOcean web service, shutdown should be predictable. The process should stop accepting traffic immediately, finish or safely abandon active work within a bounded time, and rely on the reliable queue recovery path to retry unacked jobs after restart.
+
+Status: fixed for idle polling and retry sleeps. Active migration jobs now have a bounded drain window.
+
+### 2. Code Where Flaw Existed
+
+`src/moments/worker/migration_worker.rs`
+
+```rust
+permit = semaphore.clone().acquire_owned() => {
+    let permit = match permit {
+        Ok(p) => p,
+        Err(_) => break,
+    };
+
+    match self.queue.pop_async::<MigrationJob>(self.poll_timeout_secs).await {
+        // ...
+        Err(e) => {
+            drop(permit);
+            tracing::error!(error = %e, "Queue pop error, retrying in 5s");
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    }
+}
+```
+
+The worker checked shutdown outside this branch, but once this branch started it could sit inside queue polling or sleep before noticing shutdown.
+
+### 3. Theoretical Solution
+
+For production:
+- Keep migration concurrency low on a single CPU.
+- Use short idle queue polling.
+- Make retry sleeps cancellation-aware.
+- Give active jobs a bounded drain timeout.
+- If the process exits before a job ACKs, recover the job from the processing queue on next startup.
+
+### 4. Solution Code
+
+`src/moments/worker/migration_worker.rs`
+
+```rust
+const MAX_CONCURRENT_JOBS: usize = 1;
+const IDLE_POLL_TIMEOUT_SECS: u32 = 1;
+const QUEUE_ERROR_RETRY_SECS: u64 = 1;
+const SHUTDOWN_DRAIN_TIMEOUT_SECS: u64 = 20;
+```
+
+```rust
+async fn wait_for_in_flight(semaphore: Arc<Semaphore>) {
+    match timeout(
+        Duration::from_secs(SHUTDOWN_DRAIN_TIMEOUT_SECS),
+        semaphore.acquire_many(MAX_CONCURRENT_JOBS as u32),
+    )
+    .await
+    {
+        Ok(Ok(_permit)) => {
+            tracing::info!("MigrationWorker: all in-flight jobs finished. Exiting.");
+        }
+        Ok(Err(_)) => {
+            tracing::warn!("MigrationWorker: semaphore closed during shutdown.");
+        }
+        Err(_) => {
+            tracing::warn!(
+                timeout_secs = SHUTDOWN_DRAIN_TIMEOUT_SECS,
+                "MigrationWorker: timed out waiting for in-flight jobs; unacked jobs will be recovered on next startup"
+            );
+        }
+    }
+}
+```
+
+```rust
+async fn sleep_or_shutdown(
+    shutdown_rx: &mut watch::Receiver<bool>,
+    duration: Duration,
+) -> bool {
+    tokio::select! {
+        _ = shutdown_rx.changed() => !*shutdown_rx.borrow(),
+        _ = tokio::time::sleep(duration) => true,
+    }
+}
+```
