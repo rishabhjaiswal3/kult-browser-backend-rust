@@ -557,6 +557,8 @@ pub async fn generate_presigned_upload_url_for_key(
 
 ## 7. Migration Worker ACKs Job Even If Mongo Update Fails
 
+Status: fixed. The worker now ACKs only after successful Mongo persistence or after the failed job has been safely pushed to retry/DLQ. If 0G upload already succeeded, retry jobs carry `assetZgHash` so they retry the Mongo write without re-uploading the same file.
+
 ### 1. Theoretical Flaw
 
 The migration worker downloads a file, uploads it to 0G, then writes the 0G hash to MongoDB.

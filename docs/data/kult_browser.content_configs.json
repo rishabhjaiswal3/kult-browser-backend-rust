@@ -1,0 +1,45 @@
+[{
+  "_id": {
+    "$oid": "697ba324f2123d0d5905e261"
+  },
+  "page": "home",
+  "section": "top-picks",
+  "content_type": "game",
+  "content_order": [
+    "guesstheai",
+    "zerogpool",
+    "zerodash",
+    "rageroads",
+    "xtremestuntslegends"
+  ],
+  "content_attributes": [
+    "identification",
+    "name",
+    "images.hero"
+  ]
+},
+{
+  "_id": {
+    "$oid": "697ba324f2123d0d5905e262"
+  },
+  "page": "home",
+  "section": "all-games",
+  "content_type": "game",
+  "content_order": [
+    "zerogpool",
+    "guesstheai",
+    "rageroads",
+    "xtremestuntslegends",
+    "robowars",
+    "highwayhustle",
+    "thelastshot",
+    "formulaspeedthrills",
+    "zerodash"
+  ],
+  "content_attributes": [
+    "identification",
+    "name",
+    "images",
+    "slogan"
+  ]
+}]

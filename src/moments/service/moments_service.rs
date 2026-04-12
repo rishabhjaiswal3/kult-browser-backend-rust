@@ -152,6 +152,7 @@ impl MomentsService {
                     asset_url: asset_url.to_string(),
                     asset_id: moment_id.clone(),
                     asset_type,
+                    asset_zg_hash: None,
                     attempt: 1,
                 };
 

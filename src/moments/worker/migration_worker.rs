@@ -23,6 +23,12 @@ pub struct MigrationJob {
     pub asset_id: String,
     /// MIME type (e.g. "image/gif")
     pub asset_type: String,
+    /// 0G root hash from a prior successful upload.
+    ///
+    /// Present when a retry should only persist the hash to MongoDB instead of
+    /// downloading and uploading the same asset again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset_zg_hash: Option<String>,
     /// Retry attempt number
     pub attempt: u32,
 }
@@ -38,13 +44,19 @@ pub use crate::redis::keys::MOMENTS_ZERO_G_MIGRATION_DEAD_LETTER_QUEUE as DEAD_L
 /// Converts to Reliable Queue pattern:
 /// - Polls queue via `pop_async` (BRPOPLPUSH)
 /// - Process: download, upload to 0G, update MongoDB, cleanup
-/// - Unconditionally `ack_async`s the raw payload when done (even on retry/DLQ)
+/// - ACKs the raw payload only after success or after the failure is safely requeued/DLQ'd
 /// - Listens for shutdown signal to exit gracefully
 /// Max concurrent migration jobs. Keep this at 1 for the single-CPU DO web service.
 const MAX_CONCURRENT_JOBS: usize = 1;
 const IDLE_POLL_TIMEOUT_SECS: u32 = 1;
 const QUEUE_ERROR_RETRY_SECS: u64 = 1;
 const SHUTDOWN_DRAIN_TIMEOUT_SECS: u64 = 20;
+
+#[derive(Debug)]
+enum JobProcessingResult {
+    Complete,
+    Failed { job: MigrationJob, reason: String },
+}
 
 pub struct MigrationWorker {
     queue: ValkyQueue,
@@ -126,10 +138,34 @@ impl MigrationWorker {
                             let q = queue.clone();
                             let r = repo.clone();
                             tokio::spawn(async move {
-                                Self::process_job_static(&q, &r, max_retries, job).await;
+                                match Self::process_job_static(&r, job).await {
+                                    JobProcessingResult::Complete => {
+                                        if let Err(e) = q.ack_async(&raw_data).await {
+                                            tracing::error!(error = %e, "Failed to ACK completed job");
+                                        }
+                                    }
+                                    JobProcessingResult::Failed { job, reason } => {
+                                        tracing::error!(
+                                            asset_id = %job.asset_id,
+                                            attempt = job.attempt,
+                                            error = %reason,
+                                            "Migration job failed"
+                                        );
 
-                                if let Err(e) = q.ack_async(&raw_data).await {
-                                    tracing::error!(error = %e, "Failed to ACK completed job");
+                                        match Self::handle_failure_static(&q, max_retries, job).await {
+                                            Ok(()) => {
+                                                if let Err(e) = q.ack_async(&raw_data).await {
+                                                    tracing::error!(error = %e, "Failed to ACK failed job after retry/DLQ");
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::error!(
+                                                    error = %e,
+                                                    "Failed to persist retry/DLQ job; leaving original job unacked for recovery"
+                                                );
+                                            }
+                                        }
+                                    }
                                 }
                                 drop(permit); // Release semaphore slot
                             });
@@ -187,95 +223,105 @@ impl MigrationWorker {
 
     /// Process a single migration job (static version for spawned tasks).
     async fn process_job_static(
-        queue: &ValkyQueue,
         repo: &MomentsRepository,
-        max_retries: u32,
         job: MigrationJob,
-    ) {
-        // Step 1: Download from DO Spaces
-        let download = match spaces::download_file(&job.asset_url).await {
-            Ok(result) => {
+    ) -> JobProcessingResult {
+        let root_hash = match job
+            .asset_zg_hash
+            .as_deref()
+            .map(str::trim)
+            .filter(|hash| !hash.is_empty())
+        {
+            Some(root_hash) => {
                 tracing::info!(
                     asset_id = %job.asset_id,
-                    path = %result.local_path.display(),
-                    size = result.size_bytes,
-                    "Downloaded from DO Spaces"
+                    root_hash = %root_hash,
+                    "Retrying migration with existing 0G hash"
                 );
-                result
+                root_hash.to_string()
             }
-            Err(e) => {
-                tracing::error!(
-                    asset_id = %job.asset_id,
-                    error = %e,
-                    "Failed to download from DO Spaces"
-                );
-                Self::handle_failure_static(queue, max_retries, job).await;
-                return;
-            }
-        };
+            None => {
+                // Step 1: Download from DO Spaces
+                let download = match spaces::download_file(&job.asset_url).await {
+                    Ok(result) => {
+                        tracing::info!(
+                            asset_id = %job.asset_id,
+                            path = %result.local_path.display(),
+                            size = result.size_bytes,
+                            "Downloaded from DO Spaces"
+                        );
+                        result
+                    }
+                    Err(e) => {
+                        return JobProcessingResult::Failed {
+                            job,
+                            reason: format!("Failed to download from DO Spaces: {}", e),
+                        };
+                    }
+                };
 
-        // Step 2: Upload to 0G storage
-        let local_path_str = download.local_path.to_string_lossy().to_string();
-        let upload_result = match storage::upload_file(&local_path_str) {
-            Ok(result) => {
-                tracing::info!(
-                    asset_id = %job.asset_id,
-                    root_hash = %result.root_hash,
-                    "Uploaded to 0G storage"
-                );
-                result
-            }
-            Err(e) => {
-                tracing::error!(
-                    asset_id = %job.asset_id,
-                    error = %e,
-                    "Failed to upload to 0G storage"
-                );
-                // Cleanup temp file before retrying
+                // Step 2: Upload to 0G storage
+                let local_path_str = download.local_path.to_string_lossy().to_string();
+                let upload_result = match storage::upload_file(&local_path_str) {
+                    Ok(result) => {
+                        tracing::info!(
+                            asset_id = %job.asset_id,
+                            root_hash = %result.root_hash,
+                            "Uploaded to 0G storage"
+                        );
+                        result
+                    }
+                    Err(e) => {
+                        spaces::cleanup(&download.local_path);
+                        return JobProcessingResult::Failed {
+                            job,
+                            reason: format!("Failed to upload to 0G storage: {}", e),
+                        };
+                    }
+                };
+
                 spaces::cleanup(&download.local_path);
-                Self::handle_failure_static(queue, max_retries, job).await;
-                return;
+                upload_result.root_hash
             }
         };
 
         // Step 3: Update MongoDB with 0G hash
-        match repo
-            .update_zg_hash(&job.asset_id, &upload_result.root_hash)
-            .await
-        {
+        match repo.update_zg_hash(&job.asset_id, &root_hash).await {
             Ok(true) => {
                 tracing::info!(
                     asset_id = %job.asset_id,
-                    root_hash = %upload_result.root_hash,
+                    root_hash = %root_hash,
                     "Updated asset_zg_hash in database"
                 );
-            }
-            Ok(false) => {
-                tracing::warn!(
+                tracing::info!(
                     asset_id = %job.asset_id,
-                    "Moment not found in database — hash not updated"
+                    "Migration complete"
                 );
+                JobProcessingResult::Complete
             }
-            Err(e) => {
-                tracing::error!(
-                    asset_id = %job.asset_id,
-                    error = %e,
-                    "Failed to update database — 0G hash may be lost"
-                );
-            }
+            Ok(false) => JobProcessingResult::Failed {
+                job: MigrationJob {
+                    asset_zg_hash: Some(root_hash),
+                    ..job
+                },
+                reason: "Moment not found in database while saving 0G hash".to_string(),
+            },
+            Err(e) => JobProcessingResult::Failed {
+                job: MigrationJob {
+                    asset_zg_hash: Some(root_hash),
+                    ..job
+                },
+                reason: format!("Failed to update database with 0G hash: {}", e),
+            },
         }
-
-        // Step 4: Cleanup temp file (always, even if DB update failed)
-        spaces::cleanup(&download.local_path);
-
-        tracing::info!(
-            asset_id = %job.asset_id,
-            "Migration complete"
-        );
     }
 
     /// Handle a failed job: retry or send to dead-letter queue.
-    async fn handle_failure_static(queue: &ValkyQueue, max_retries: u32, job: MigrationJob) {
+    async fn handle_failure_static(
+        queue: &ValkyQueue,
+        max_retries: u32,
+        job: MigrationJob,
+    ) -> Result<(), String> {
         if job.attempt < max_retries {
             let retry_job = MigrationJob {
                 attempt: job.attempt + 1,
@@ -286,26 +332,76 @@ impl MigrationWorker {
                 attempt = retry_job.attempt,
                 "Retrying migration job"
             );
-            if let Err(e) = queue.push_async(&retry_job).await {
-                tracing::error!(error = %e, "Failed to re-queue job");
-            }
+            queue
+                .push_async(&retry_job)
+                .await
+                .map_err(|e| format!("Failed to re-queue job: {}", e))?;
         } else {
-            let dlq_name = format!("{}:dead_letter", queue.queue_name());
             tracing::error!(
                 asset_id = %job.asset_id,
                 attempts = job.attempt,
                 "Job failed after max retries — sending to dead letter queue"
             );
-            match ValkyQueue::new(queue.client().clone(), &dlq_name).await {
-                Ok(dlq) => {
-                    if let Err(e) = dlq.push_async(&job).await {
-                        tracing::error!(error = %e, "Failed to push to dead letter queue");
-                    }
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, "Failed to connect to dead letter queue");
-                }
-            }
+            let dlq = ValkyQueue::new(queue.client().clone(), DEAD_LETTER_QUEUE.as_str())
+                .await
+                .map_err(|e| format!("Failed to connect to dead letter queue: {}", e))?;
+
+            dlq.push_async(&job)
+                .await
+                .map_err(|e| format!("Failed to push to dead letter queue: {}", e))?;
         }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MigrationJob;
+
+    #[test]
+    fn migration_job_deserializes_legacy_payload_without_asset_zg_hash() {
+        let payload = r#"{
+            "assetUrl": "https://example.com/moment.jpg",
+            "assetId": "moment-1",
+            "assetType": "image/jpeg",
+            "attempt": 1
+        }"#;
+
+        let job: MigrationJob = serde_json::from_str(payload).expect("valid legacy payload");
+
+        assert_eq!(job.asset_id, "moment-1");
+        assert_eq!(job.asset_zg_hash, None);
+    }
+
+    #[test]
+    fn migration_job_serializes_asset_zg_hash_for_db_retry() {
+        let job = MigrationJob {
+            asset_url: "https://example.com/moment.jpg".to_string(),
+            asset_id: "moment-1".to_string(),
+            asset_type: "image/jpeg".to_string(),
+            asset_zg_hash: Some("0xroot".to_string()),
+            attempt: 2,
+        };
+
+        let value = serde_json::to_value(job).expect("serializable job");
+
+        assert_eq!(value["assetZgHash"], "0xroot");
+        assert_eq!(value["attempt"], 2);
+    }
+
+    #[test]
+    fn migration_job_omits_asset_zg_hash_for_fresh_jobs() {
+        let job = MigrationJob {
+            asset_url: "https://example.com/moment.jpg".to_string(),
+            asset_id: "moment-1".to_string(),
+            asset_type: "image/jpeg".to_string(),
+            asset_zg_hash: None,
+            attempt: 1,
+        };
+
+        let value = serde_json::to_value(job).expect("serializable job");
+
+        assert!(value.get("assetZgHash").is_none());
     }
 }
