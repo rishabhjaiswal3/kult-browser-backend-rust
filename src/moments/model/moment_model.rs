@@ -67,6 +67,10 @@ pub struct MomentModel {
     #[serde(default)]
     pub tags: Vec<String>,
 
+    /// Related game identification slugs
+    #[serde(rename = "relatedGames", default)]
+    pub related_games: Vec<String>,
+
     /// Social media links (twitter, instagram, etc.)
     #[serde(rename = "socialMediaLinks", default)]
     pub social_media_links: Option<mongodb::bson::Document>,

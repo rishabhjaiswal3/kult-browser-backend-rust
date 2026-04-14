@@ -6,6 +6,7 @@ use axum::{
 };
 use mongodb::Database;
 
+use crate::game::repository::GameModelRepository;
 use crate::moments::comments;
 use crate::moments::controller::{
     create_moment, delete_moment, get_feed, get_moment, get_my_moments, like_moment, update_moment,
@@ -30,13 +31,14 @@ use crate::external::digital_ocean::spaces::SpacesService;
 pub fn routes(db: Database, queue: Option<ValkyQueue>) -> Router {
     let repo = MomentsRepository::new(&db);
     let likes_repo = MomentLikesRepository::new(&db);
+    let games_repo = GameModelRepository::new(&db);
     let spaces_service = SpacesService::new();
     let comments_router = comments::route::routes(db.clone());
     let creators_router = creators::route::routes(db.clone());
 
     let service = match queue {
-        Some(q) => MomentsService::with_queue(repo, likes_repo, q, spaces_service),
-        None => MomentsService::new(repo, likes_repo, spaces_service),
+        Some(q) => MomentsService::with_queue(repo, likes_repo, games_repo, q, spaces_service),
+        None => MomentsService::new(repo, likes_repo, games_repo, spaces_service),
     };
     let state = MomentsState { service };
 

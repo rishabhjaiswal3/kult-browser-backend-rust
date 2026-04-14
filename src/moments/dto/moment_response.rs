@@ -50,6 +50,9 @@ pub struct MomentResponse {
     /// Tags
     pub tags: Vec<String>,
 
+    /// Related game identification slugs
+    pub related_games: Vec<String>,
+
     /// Social media links
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Object)]

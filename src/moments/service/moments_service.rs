@@ -1,6 +1,7 @@
 // src/moments/service/moments_service.rs
 
 use crate::external::digital_ocean::spaces::SpacesService;
+use crate::game::repository::GameModelRepository;
 use crate::handler::AppError;
 use crate::moments::dto::{
     CreateMomentRequest, CreateMomentResponse, LikeMomentResponse, MomentListResponse,
@@ -10,12 +11,16 @@ use crate::moments::model::{MomentLikeModel, MomentModel};
 use crate::moments::repository::{CreateMomentLikeError, MomentLikesRepository, MomentsRepository};
 use crate::moments::worker::migration_worker::MigrationJob;
 use crate::redis::ValkyQueue;
+use std::collections::HashSet;
+
+const MAX_RELATED_GAMES: usize = 5;
 
 /// Service layer for Moment operations.
 #[derive(Clone)]
 pub struct MomentsService {
     repo: MomentsRepository,
     likes_repo: MomentLikesRepository,
+    games_repo: GameModelRepository,
     queue: Option<ValkyQueue>,
     spaces_service: SpacesService,
 }
@@ -24,11 +29,13 @@ impl MomentsService {
     pub fn new(
         repo: MomentsRepository,
         likes_repo: MomentLikesRepository,
+        games_repo: GameModelRepository,
         spaces_service: SpacesService,
     ) -> Self {
         Self {
             repo,
             likes_repo,
+            games_repo,
             queue: None,
             spaces_service,
         }
@@ -38,12 +45,14 @@ impl MomentsService {
     pub fn with_queue(
         repo: MomentsRepository,
         likes_repo: MomentLikesRepository,
+        games_repo: GameModelRepository,
         queue: ValkyQueue,
         spaces_service: SpacesService,
     ) -> Self {
         Self {
             repo,
             likes_repo,
+            games_repo,
             queue: Some(queue),
             spaces_service,
         }
@@ -78,6 +87,7 @@ impl MomentsService {
                 "cannot have more than 10 tags".to_string(),
             ));
         }
+        let related_games = self.normalize_related_games(&request.related_games).await?;
         if let Some(asset_url) = request.asset_url.as_deref().map(str::trim) {
             if asset_url.is_empty() {
                 return Err(AppError::BadRequest(
@@ -118,6 +128,7 @@ impl MomentsService {
                 .into_iter()
                 .map(|t| t.trim().to_string())
                 .collect(),
+            related_games,
             social_media_links: request
                 .social_media_links
                 .and_then(|v| mongodb::bson::to_document(&v).ok()),
@@ -369,6 +380,10 @@ impl MomentsService {
             let tags: Vec<String> = tags.into_iter().map(|t| t.trim().to_string()).collect();
             updates.insert("tags", tags);
         }
+        if let Some(related_games) = request.related_games {
+            let related_games = self.normalize_related_games(&related_games).await?;
+            updates.insert("relatedGames", related_games);
+        }
         if let Some(links) = request.social_media_links {
             if let Ok(doc) = mongodb::bson::to_document(&links) {
                 updates.insert("socialMediaLinks", doc);
@@ -487,6 +502,7 @@ impl MomentsService {
             title: moment.title,
             description: moment.description,
             tags: moment.tags,
+            related_games: moment.related_games,
             social_media_links: moment
                 .social_media_links
                 .and_then(|d| serde_json::to_value(d).ok()),
@@ -501,5 +517,58 @@ impl MomentsService {
             original_filename: moment.original_filename,
             file_size_bytes: moment.file_size_bytes,
         }
+    }
+
+    async fn normalize_related_games(
+        &self,
+        related_games: &[String],
+    ) -> Result<Vec<String>, AppError> {
+        let mut seen = HashSet::new();
+        let mut normalized = Vec::new();
+
+        for related_game in related_games {
+            let related_game = related_game.trim();
+
+            if related_game.is_empty() {
+                return Err(AppError::BadRequest(
+                    "related game identification cannot be empty".to_string(),
+                ));
+            }
+
+            if seen.insert(related_game.to_string()) {
+                normalized.push(related_game.to_string());
+            }
+        }
+
+        if normalized.len() > MAX_RELATED_GAMES {
+            return Err(AppError::BadRequest(format!(
+                "cannot have more than {} related games",
+                MAX_RELATED_GAMES
+            )));
+        }
+
+        let released_identifications = self
+            .games_repo
+            .find_released_identifications(&normalized)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to validate related game identifications");
+                AppError::Internal(e.to_string())
+            })?;
+
+        if released_identifications.len() != normalized.len() {
+            let missing: Vec<String> = normalized
+                .iter()
+                .filter(|identification| !released_identifications.contains(*identification))
+                .cloned()
+                .collect();
+
+            return Err(AppError::BadRequest(format!(
+                "unknown or unreleased related game identification(s): {}",
+                missing.join(", ")
+            )));
+        }
+
+        Ok(normalized)
     }
 }

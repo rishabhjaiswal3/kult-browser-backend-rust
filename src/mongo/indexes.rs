@@ -136,6 +136,14 @@ async fn ensure_moments_indexes(db: &Database) -> Result<(), mongodb::error::Err
         )
         .await?;
 
+    moments
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "relatedGames": 1, "createdAt": -1 })
+                .build(),
+        )
+        .await?;
+
     // Comments
     let comments = db.collection::<mongodb::bson::Document>(&CONFIG.db.moment_comments_collection);
 

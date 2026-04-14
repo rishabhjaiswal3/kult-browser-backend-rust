@@ -30,6 +30,9 @@ pub struct UpdateMomentRequest {
     /// Updated tags
     pub tags: Option<Vec<String>>,
 
+    /// Updated related game identification slugs
+    pub related_games: Option<Vec<String>>,
+
     /// Updated social media links
     #[schema(value_type = Option<Object>)]
     pub social_media_links: Option<serde_json::Value>,

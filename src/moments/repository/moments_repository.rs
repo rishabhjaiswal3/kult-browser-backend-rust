@@ -214,7 +214,8 @@ impl MomentsRepository {
                 "$or": [
                     { "title": { "$regex": &escaped, "$options": "i" } },
                     { "description": { "$regex": &escaped, "$options": "i" } },
-                    { "tags": { "$regex": &escaped, "$options": "i" } }
+                    { "tags": { "$regex": &escaped, "$options": "i" } },
+                    { "relatedGames": { "$regex": &escaped, "$options": "i" } }
                 ]
             });
         }

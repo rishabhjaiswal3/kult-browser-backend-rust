@@ -24,6 +24,10 @@ pub struct CreateMomentRequest {
     #[serde(default)]
     pub tags: Vec<String>,
 
+    /// Related game identification slugs
+    #[serde(default)]
+    pub related_games: Vec<String>,
+
     /// Social media links
     #[schema(value_type = Option<Object>)]
     pub social_media_links: Option<serde_json::Value>,
