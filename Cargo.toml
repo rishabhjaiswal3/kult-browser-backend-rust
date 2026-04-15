@@ -41,6 +41,11 @@ name = "test_prod_flow"
 path = "bin/test/test_prod_flow.rs"
 required-features = ["dev-bins"]
 
+[[bin]]
+name = "test_marketplace_flow"
+path = "bin/test/test_marketplace_flow.rs"
+required-features = ["dev-bins"]
+
 [dependencies]
 mongodb = "3.1"
 tokio = { version = "1", features = ["full"] }

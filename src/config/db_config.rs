@@ -38,6 +38,10 @@ pub struct DbConfig {
     pub moment_likes_collection: String,
     /// Shared posts collection name (default: shared_posts)
     pub shared_posts_collection: String,
+    /// Marketplace listings collection name (default: marketplace_listings)
+    pub marketplace_listings_collection: String,
+    /// Marketplace orders collection name (default: marketplace_orders)
+    pub marketplace_orders_collection: String,
 }
 
 impl DbConfig {
@@ -95,6 +99,12 @@ impl DbConfig {
 
             shared_posts_collection: env::var("SHARED_POSTS_COLL")
                 .unwrap_or_else(|_| "shared_posts".to_string()),
+
+            marketplace_listings_collection: env::var("MARKETPLACE_LISTINGS_COLL")
+                .unwrap_or_else(|_| "marketplace_listings".to_string()),
+
+            marketplace_orders_collection: env::var("MARKETPLACE_ORDERS_COLL")
+                .unwrap_or_else(|_| "marketplace_orders".to_string()),
         }
     }
 }

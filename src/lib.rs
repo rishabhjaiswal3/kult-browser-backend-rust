@@ -7,6 +7,7 @@ pub mod game;
 pub mod handler;
 pub mod leaderboard;
 pub mod logging;
+pub mod marketplace;
 pub mod middleware;
 pub mod moments;
 pub mod mongo;

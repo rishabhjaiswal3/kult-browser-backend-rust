@@ -188,6 +188,30 @@ pub struct ReferralErrorResponse {
     pub error: String,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct ListingApiResponse {
+    pub ok: bool,
+    pub data: crate::marketplace::dto::ListingResponse,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ListingListApiResponse {
+    pub ok: bool,
+    pub data: crate::marketplace::dto::ListingListResponse,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct OrderApiResponse {
+    pub ok: bool,
+    pub data: crate::marketplace::orders::dto::OrderResponse,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct OrderListApiResponse {
+    pub ok: bool,
+    pub data: crate::marketplace::orders::dto::OrderListResponse,
+}
+
 pub struct SecurityAddon;
 
 impl Modify for SecurityAddon {
@@ -239,7 +263,12 @@ impl Modify for SecurityAddon {
         crate::moments::social_media::controller::requeue_post,
         crate::upload::controller::generate_presigned_url,
         crate::referral::route::get_my_referral_code,
-        crate::referral::redirect_route::handle_redirect
+        crate::referral::redirect_route::handle_redirect,
+        crate::marketplace::controller::listing_controller::get_listings,
+        crate::marketplace::controller::listing_controller::get_listing,
+        crate::marketplace::orders::controller::order_controller::create_order,
+        crate::marketplace::orders::controller::order_controller::get_orders,
+        crate::marketplace::orders::controller::order_controller::get_order
     ),
     components(
         schemas(
@@ -323,7 +352,16 @@ impl Modify for SecurityAddon {
             SharedPostListApiResponse,
             SubmitSharedPostApiResponse,
             SubmitSharedPostResponse,
-            UpdateNameApiResponse
+            UpdateNameApiResponse,
+            ListingApiResponse,
+            ListingListApiResponse,
+            OrderApiResponse,
+            OrderListApiResponse,
+            crate::marketplace::dto::ListingResponse,
+            crate::marketplace::dto::ListingListResponse,
+            crate::marketplace::orders::dto::CreateOrderRequest,
+            crate::marketplace::orders::dto::OrderResponse,
+            crate::marketplace::orders::dto::OrderListResponse
         )
     ),
     modifiers(&SecurityAddon),
@@ -338,7 +376,9 @@ impl Modify for SecurityAddon {
         (name = "Comments", description = "Moment comments and replies"),
         (name = "Social Media", description = "Moment social media submission"),
         (name = "Upload", description = "Asset upload preparation"),
-        (name = "Referral", description = "Referral management and redirects")
+        (name = "Referral", description = "Referral management and redirects"),
+        (name = "Marketplace", description = "Marketplace listings"),
+        (name = "Marketplace Orders", description = "Marketplace order management")
     )
 )]
 pub struct ApiDoc;

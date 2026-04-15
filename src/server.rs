@@ -15,6 +15,7 @@ use crate::config::CONFIG;
 use crate::content;
 use crate::game;
 use crate::leaderboard;
+use crate::marketplace;
 use crate::moments;
 use crate::moments::social_media;
 use crate::moments::social_media::worker::scrape_job::SCRAPE_QUEUE;
@@ -141,6 +142,7 @@ async fn build_router(db: Database) -> Router {
             "/player",
             player::routes(db.clone(), client, anti_fraud_service),
         )
+        .nest("/marketplace", marketplace::routes(db.clone()))
         .nest("/moments", moments::routes(db.clone(), migration_queue))
         .nest(
             "/moments/social-media",
