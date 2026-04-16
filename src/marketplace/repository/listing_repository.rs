@@ -49,11 +49,11 @@ impl ListingRepository {
             .map_err(|e| e.to_string())
     }
 
-    /// Find all active listings (paginated), optionally filtered by game identification and asset_type.
+    /// Find all active listings (paginated), optionally filtered by game identification and category.
     pub async fn find_active(
         &self,
         game_identification: Option<&str>,
-        asset_type: Option<&str>,
+        category: Option<&str>,
         skip: u64,
         limit: i64,
     ) -> Result<Vec<ListingModel>, String> {
@@ -62,8 +62,8 @@ impl ListingRepository {
         if let Some(gi) = game_identification {
             filter.insert("gameIdentification", gi);
         }
-        if let Some(at) = asset_type {
-            filter.insert("assetType", at);
+        if let Some(cat) = category {
+            filter.insert("category", cat);
         }
 
         let cursor = self
@@ -82,15 +82,15 @@ impl ListingRepository {
     pub async fn count_active(
         &self,
         game_identification: Option<&str>,
-        asset_type: Option<&str>,
+        category: Option<&str>,
     ) -> Result<u64, String> {
         let mut filter = doc! { "status": "active" };
 
         if let Some(gi) = game_identification {
             filter.insert("gameIdentification", gi);
         }
-        if let Some(at) = asset_type {
-            filter.insert("assetType", at);
+        if let Some(cat) = category {
+            filter.insert("category", cat);
         }
 
         self.collection
@@ -113,52 +113,5 @@ impl ListingRepository {
             .return_document(mongodb::options::ReturnDocument::After)
             .await
             .map_err(|e| e.to_string())
-    }
-
-    /// Atomically decrement remaining supply. Returns None if out of stock.
-    pub async fn decrement_supply(
-        &self,
-        id: &ObjectId,
-        quantity: u32,
-    ) -> Result<Option<ListingModel>, String> {
-        let filter = doc! {
-            "_id": id,
-            "status": "active",
-            "$or": [
-                { "remaining": { "$gte": quantity as i64 } },
-                { "remaining": null }
-            ]
-        };
-
-        // Build update: decrement remaining (only if not null) and set updatedAt
-        let mut update = doc! {
-            "$set": { "updatedAt": DateTime::now() }
-        };
-
-        // Only decrement if supply is limited
-        let listing = self.find_by_id(id).await?;
-        if let Some(ref l) = listing {
-            if l.remaining.is_some() {
-                update.insert("$inc", doc! { "remaining": -(quantity as i64) });
-            }
-        }
-
-        self.collection
-            .find_one_and_update(filter, update)
-            .return_document(mongodb::options::ReturnDocument::After)
-            .await
-            .map_err(|e| e.to_string())
-    }
-
-    /// Mark listing as sold_out if remaining hits 0.
-    pub async fn mark_sold_out_if_empty(&self, id: &ObjectId) -> Result<(), String> {
-        self.collection
-            .update_one(
-                doc! { "_id": id, "remaining": 0 },
-                doc! { "$set": { "status": "sold_out", "updatedAt": DateTime::now() } },
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-        Ok(())
     }
 }

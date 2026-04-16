@@ -22,7 +22,7 @@ impl OrderService {
         }
     }
 
-    /// Purchase a listing — creates order and decrements supply.
+    /// Purchase a listing — creates an order.
     pub async fn create_order(
         &self,
         player_id: &str,
@@ -49,23 +49,6 @@ impl OrderService {
             return Err(AppError::BadRequest("Listing is not active".to_string()));
         }
 
-        // Check supply
-        if let Some(remaining) = listing.remaining {
-            if remaining < request.quantity as u64 {
-                return Err(AppError::BadRequest("Insufficient supply".to_string()));
-            }
-        }
-
-        // Decrement supply atomically
-        let updated_listing = self
-            .listing_repo
-            .decrement_supply(&listing_oid, request.quantity)
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to decrement supply: {}", e)))?
-            .ok_or_else(|| {
-                AppError::Conflict("Listing sold out or no longer active".to_string())
-            })?;
-
         // Create order
         let order = OrderModel {
             id: None,
@@ -85,11 +68,6 @@ impl OrderService {
             .await
             .map_err(|e| AppError::Internal(format!("Failed to create order: {}", e)))?;
 
-        // Auto mark sold_out if remaining hit 0
-        if updated_listing.remaining == Some(0) {
-            let _ = self.listing_repo.mark_sold_out_if_empty(&listing_oid).await;
-        }
-
         Ok(OrderResponse {
             id: order_id.to_hex(),
             listing_id: request.listing_id,
@@ -99,7 +77,6 @@ impl OrderService {
             quantity: order.quantity,
             status: "completed".to_string(),
             tx_hash: order.tx_hash,
-            created_at: chrono::Utc::now().to_rfc3339(),
         })
     }
 
@@ -160,6 +137,37 @@ impl OrderService {
         Ok(Self::to_response(order))
     }
 
+    /// Get all orders (admin view, paginated).
+    pub async fn get_all_orders(
+        &self,
+        page: u32,
+        per_page: u32,
+    ) -> Result<OrderListResponse, AppError> {
+        let skip = ((page.saturating_sub(1)) * per_page) as u64;
+        let limit = per_page as i64;
+
+        let total = self
+            .order_repo
+            .count_all()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to count orders: {}", e)))?;
+
+        let orders = self
+            .order_repo
+            .find_all(skip, limit)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to fetch orders: {}", e)))?;
+
+        let items: Vec<OrderResponse> = orders.into_iter().map(Self::to_response).collect();
+
+        Ok(OrderListResponse {
+            orders: items,
+            total,
+            page,
+            per_page,
+        })
+    }
+
     fn to_response(order: OrderModel) -> OrderResponse {
         OrderResponse {
             id: order.id.map(|oid| oid.to_hex()).unwrap_or_default(),
@@ -170,10 +178,6 @@ impl OrderService {
             quantity: order.quantity,
             status: order.status,
             tx_hash: order.tx_hash,
-            created_at: order
-                .created_at
-                .map(|dt| dt.try_to_rfc3339_string().unwrap_or_default())
-                .unwrap_or_default(),
         }
     }
 }

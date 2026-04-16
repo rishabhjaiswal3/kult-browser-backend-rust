@@ -35,7 +35,6 @@ pub struct OrderResponse {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tx_hash: Option<String>,
-    pub created_at: String,
 }
 
 /// Paginated list of orders.

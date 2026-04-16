@@ -20,7 +20,7 @@ pub struct MarketplaceState {
 #[into_params(parameter_in = Query)]
 pub struct ListingsQuery {
     pub game_identification: Option<String>,
-    pub asset_type: Option<String>,
+    pub category: Option<String>,
     pub page: Option<u32>,
     pub per_page: Option<u32>,
 }
@@ -30,7 +30,7 @@ pub struct ListingsQuery {
     get,
     path = "/api/marketplace",
     summary = "List active marketplace listings",
-    description = "Returns paginated active listings with optional game and asset type filters.",
+    description = "Returns paginated active listings with optional game and category filters.",
     params(ListingsQuery),
     responses(
         (status = 200, description = "Paginated listings", body = crate::openapi::ListingListApiResponse),
@@ -47,7 +47,7 @@ pub async fn get_listings(
 
     match state
         .listing_service
-        .get_listings(query.game_identification, query.asset_type, page, per_page)
+        .get_listings(query.game_identification, query.category, page, per_page)
         .await
     {
         Ok(data) => ApiResponse::success(data).into_response(),

@@ -24,7 +24,9 @@ KULT_Browser_Dev_Spec_v4.docx.pdf
 /scripts
 
 # Local-only helper binaries and scratch scripts
-/bin/
+/bin
+
+/tests
 
 #ai related
 .claudecode

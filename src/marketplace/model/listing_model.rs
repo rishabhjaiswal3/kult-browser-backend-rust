@@ -14,39 +14,33 @@ pub struct ListingModel {
     pub name: String,
 
     /// Short description
-    #[serde(default)]
-    pub description: Option<String>,
+    #[serde(rename = "shortDescription", default)]
+    pub short_description: Option<String>,
 
-    /// Asset type: weapon, skin, power_up, collectible, etc.
-    #[serde(rename = "assetType")]
-    pub asset_type: String,
+    /// Long description
+    #[serde(rename = "longDescription", default)]
+    pub long_description: Option<String>,
+
+    /// Asset URL (image / media)
+    #[serde(rename = "assetUrl", default)]
+    pub asset_url: Option<String>,
+
+    /// Price in the listing's currency
+    pub price: f64,
+
+    /// Category: Coins, Gems, Guns, etc.
+    pub category: String,
+
+    /// Currency: SOMI, ETH, etc.
+    pub currency: String,
 
     /// Game identification slug (stable reference, survives re-ingestion)
     #[serde(rename = "gameIdentification")]
     pub game_identification: String,
 
-    /// Thumbnail image URL
-    #[serde(rename = "thumbnailUrl", default)]
-    pub thumbnail_url: Option<String>,
-
-    /// Price in A0GI
-    pub price: f64,
-
-    /// Total supply (null = unlimited)
-    #[serde(default)]
-    pub supply: Option<u64>,
-
-    /// Remaining supply (null = unlimited)
-    #[serde(default)]
-    pub remaining: Option<u64>,
-
-    /// Listing status: active, sold_out, delisted
+    /// Listing status: active, delisted
     #[serde(default = "default_status")]
     pub status: String,
-
-    /// Flexible game-specific metadata
-    #[serde(default)]
-    pub attributes: Option<mongodb::bson::Document>,
 
     #[serde(rename = "createdAt", default)]
     pub created_at: Option<mongodb::bson::DateTime>,
