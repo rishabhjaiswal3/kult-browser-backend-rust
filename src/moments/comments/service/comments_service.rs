@@ -7,6 +7,7 @@ use crate::moments::comments::dto::{
 use crate::moments::comments::model::CommentModel;
 use crate::moments::comments::repository::CommentsRepository;
 use crate::moments::repository::MomentsRepository;
+use crate::onchain::{metadata_hash, ActivityType, OnchainActivityService, RecordActivityInput};
 
 const MAX_COMMENT_LENGTH: usize = 500;
 
@@ -14,16 +15,19 @@ const MAX_COMMENT_LENGTH: usize = 500;
 pub struct CommentsService {
     comments_repository: CommentsRepository,
     moments_repository: MomentsRepository,
+    onchain_activity_service: Option<OnchainActivityService>,
 }
 
 impl CommentsService {
     pub fn new(
         comments_repository: CommentsRepository,
         moments_repository: MomentsRepository,
+        onchain_activity_service: Option<OnchainActivityService>,
     ) -> Self {
         Self {
             comments_repository,
             moments_repository,
+            onchain_activity_service,
         }
     }
 
@@ -67,6 +71,15 @@ impl CommentsService {
             let _ = self.comments_repository.delete(&created_id).await;
             return Err(e);
         }
+
+        self.enqueue_onchain_activity(
+            wallet,
+            ActivityType::CommentCreated,
+            moment_id,
+            &created_id.to_hex(),
+            &serde_json::json!({ "commentId": created_id.to_hex() }),
+        )
+        .await;
 
         Ok(Self::to_response(created))
     }
@@ -173,6 +186,18 @@ impl CommentsService {
             let _ = self.comments_repository.delete(&created_id).await;
             return Err(e);
         }
+
+        self.enqueue_onchain_activity(
+            wallet,
+            ActivityType::ReplyCreated,
+            &parent.moment_id,
+            &created_id.to_hex(),
+            &serde_json::json!({
+                "commentId": created_id.to_hex(),
+                "parentCommentId": parent_id.to_hex(),
+            }),
+        )
+        .await;
 
         Ok(Self::to_response(created))
     }
@@ -370,6 +395,36 @@ impl CommentsService {
         }
 
         Ok(())
+    }
+
+    async fn enqueue_onchain_activity<T: serde::Serialize>(
+        &self,
+        wallet: &str,
+        activity_type: ActivityType,
+        moment_id: &str,
+        entity_id: &str,
+        metadata: &T,
+    ) {
+        let Some(service) = &self.onchain_activity_service else {
+            return;
+        };
+
+        if let Err(e) = service
+            .enqueue_activity(RecordActivityInput {
+                user_wallet: wallet.trim().to_string(),
+                activity_type,
+                moment_id: moment_id.to_string(),
+                entity_id: entity_id.to_string(),
+                metadata_hash: metadata_hash(metadata),
+            })
+            .await
+        {
+            tracing::error!(
+                error = %e,
+                moment_id = %moment_id,
+                "Failed to enqueue onchain comment activity"
+            );
+        }
     }
 
     fn to_response(comment: CommentModel) -> CommentResponse {

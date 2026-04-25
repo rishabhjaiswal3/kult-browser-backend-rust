@@ -42,6 +42,8 @@ pub struct DbConfig {
     pub marketplace_listings_collection: String,
     /// Marketplace orders collection name (default: marketplace_orders)
     pub marketplace_orders_collection: String,
+    /// Onchain activity jobs collection name (default: onchain_activity_jobs)
+    pub onchain_activity_jobs_collection: String,
 }
 
 impl DbConfig {
@@ -105,6 +107,9 @@ impl DbConfig {
 
             marketplace_orders_collection: env::var("MARKETPLACE_ORDERS_COLL")
                 .unwrap_or_else(|_| "marketplace_orders".to_string()),
+
+            onchain_activity_jobs_collection: env::var("ONCHAIN_ACTIVITY_JOBS_COLL")
+                .unwrap_or_else(|_| "onchain_activity_jobs".to_string()),
         }
     }
 }

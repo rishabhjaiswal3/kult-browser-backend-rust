@@ -11,6 +11,7 @@ pub mod marketplace;
 pub mod middleware;
 pub mod moments;
 pub mod mongo;
+pub mod onchain;
 pub mod openapi;
 pub mod player;
 pub mod redis;

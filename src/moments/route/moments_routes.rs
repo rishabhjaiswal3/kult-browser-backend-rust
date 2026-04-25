@@ -15,6 +15,7 @@ use crate::moments::controller::{
 use crate::moments::creators;
 use crate::moments::repository::{MomentLikesRepository, MomentsRepository};
 use crate::moments::service::MomentsService;
+use crate::onchain::{OnchainActivityRepository, OnchainActivityService};
 use crate::redis::ValkyQueue;
 
 /// Build routes for the moments module.
@@ -33,12 +34,28 @@ pub fn routes(db: Database, queue: Option<ValkyQueue>) -> Router {
     let likes_repo = MomentLikesRepository::new(&db);
     let games_repo = GameModelRepository::new(&db);
     let spaces_service = SpacesService::new();
+    let onchain_activity_service = Some(OnchainActivityService::new(
+        OnchainActivityRepository::new(&db),
+    ));
     let comments_router = comments::route::routes(db.clone());
     let creators_router = creators::route::routes(db.clone());
 
     let service = match queue {
-        Some(q) => MomentsService::with_queue(repo, likes_repo, games_repo, q, spaces_service),
-        None => MomentsService::new(repo, likes_repo, games_repo, spaces_service),
+        Some(q) => MomentsService::with_queue(
+            repo,
+            likes_repo,
+            games_repo,
+            q,
+            spaces_service,
+            onchain_activity_service,
+        ),
+        None => MomentsService::new(
+            repo,
+            likes_repo,
+            games_repo,
+            spaces_service,
+            onchain_activity_service,
+        ),
     };
     let state = MomentsState { service };
 

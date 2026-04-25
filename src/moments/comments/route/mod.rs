@@ -8,11 +8,19 @@ use crate::moments::comments::controller::{
 use crate::moments::comments::repository::CommentsRepository;
 use crate::moments::comments::service::CommentsService;
 use crate::moments::MomentsRepository;
+use crate::onchain::{OnchainActivityRepository, OnchainActivityService};
 
 pub fn routes(db: Database) -> Router {
     let comments_repository = CommentsRepository::new(&db);
     let moments_repository = MomentsRepository::new(&db);
-    let service = CommentsService::new(comments_repository, moments_repository);
+    let onchain_activity_service = Some(OnchainActivityService::new(
+        OnchainActivityRepository::new(&db),
+    ));
+    let service = CommentsService::new(
+        comments_repository,
+        moments_repository,
+        onchain_activity_service,
+    );
     let state = CommentsState { service };
 
     Router::new()

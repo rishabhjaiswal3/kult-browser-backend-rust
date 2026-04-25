@@ -20,6 +20,7 @@ pub async fn ensure_indexes(db: &Database) {
         ensure_content_indexes(db),
         ensure_agent_indexes(db),
         ensure_referral_indexes(db),
+        ensure_onchain_indexes(db),
     );
 
     // Log any failures but don't crash — the app can still work without indexes (just slower)
@@ -32,9 +33,11 @@ pub async fn ensure_indexes(db: &Database) {
         "content",
         "agent",
         "referral",
+        "onchain",
     ];
     for (i, result) in [
         results.0, results.1, results.2, results.3, results.4, results.5, results.6, results.7,
+        results.8,
     ]
     .into_iter()
     .enumerate()
@@ -45,6 +48,35 @@ pub async fn ensure_indexes(db: &Database) {
     }
 
     tracing::info!("MongoDB index initialization complete");
+}
+
+async fn ensure_onchain_indexes(db: &Database) -> Result<(), mongodb::error::Error> {
+    let coll =
+        db.collection::<mongodb::bson::Document>(&CONFIG.db.onchain_activity_jobs_collection);
+
+    coll.create_index(
+        IndexModel::builder()
+            .keys(doc! { "activityId": 1 })
+            .options(IndexOptions::builder().unique(true).build())
+            .build(),
+    )
+    .await?;
+
+    coll.create_index(
+        IndexModel::builder()
+            .keys(doc! { "status": 1, "createdAt": 1 })
+            .build(),
+    )
+    .await?;
+
+    coll.create_index(
+        IndexModel::builder()
+            .keys(doc! { "userWallet": 1, "createdAt": -1 })
+            .build(),
+    )
+    .await?;
+
+    Ok(())
 }
 
 async fn ensure_player_indexes(db: &Database) -> Result<(), mongodb::error::Error> {

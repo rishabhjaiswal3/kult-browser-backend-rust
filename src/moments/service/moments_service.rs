@@ -10,6 +10,7 @@ use crate::moments::dto::{
 use crate::moments::model::{MomentLikeModel, MomentModel};
 use crate::moments::repository::{CreateMomentLikeError, MomentLikesRepository, MomentsRepository};
 use crate::moments::worker::migration_worker::MigrationJob;
+use crate::onchain::{metadata_hash, ActivityType, OnchainActivityService, RecordActivityInput};
 use crate::redis::ValkyQueue;
 use std::collections::HashSet;
 
@@ -23,6 +24,7 @@ pub struct MomentsService {
     games_repo: GameModelRepository,
     queue: Option<ValkyQueue>,
     spaces_service: SpacesService,
+    onchain_activity_service: Option<OnchainActivityService>,
 }
 
 impl MomentsService {
@@ -31,6 +33,7 @@ impl MomentsService {
         likes_repo: MomentLikesRepository,
         games_repo: GameModelRepository,
         spaces_service: SpacesService,
+        onchain_activity_service: Option<OnchainActivityService>,
     ) -> Self {
         Self {
             repo,
@@ -38,6 +41,7 @@ impl MomentsService {
             games_repo,
             queue: None,
             spaces_service,
+            onchain_activity_service,
         }
     }
 
@@ -48,6 +52,7 @@ impl MomentsService {
         games_repo: GameModelRepository,
         queue: ValkyQueue,
         spaces_service: SpacesService,
+        onchain_activity_service: Option<OnchainActivityService>,
     ) -> Self {
         Self {
             repo,
@@ -55,6 +60,7 @@ impl MomentsService {
             games_repo,
             queue: Some(queue),
             spaces_service,
+            onchain_activity_service,
         }
     }
 
@@ -103,6 +109,12 @@ impl MomentsService {
         }
 
         let moment_id = MomentModel::generate_moment_id();
+        let onchain_metadata = serde_json::json!({
+            "title": request.title.trim(),
+            "tags": request.tags,
+            "relatedGames": request.related_games,
+            "assetUrl": request.asset_url,
+        });
 
         let moment = MomentModel {
             id: None,
@@ -193,6 +205,14 @@ impl MomentsService {
         }
 
         tracing::info!(moment_id = %moment_id, wallet = %wallet, "Moment created successfully");
+        self.enqueue_onchain_activity(
+            wallet,
+            ActivityType::MomentCreated,
+            &moment_id,
+            &moment_id,
+            &onchain_metadata,
+        )
+        .await;
 
         Ok(CreateMomentResponse {
             moment_id,
@@ -480,6 +500,17 @@ impl MomentsService {
             .map_err(AppError::Internal)?
             .ok_or_else(|| AppError::NotFound("Moment not found".to_string()))?;
 
+        self.enqueue_onchain_activity(
+            &wallet,
+            ActivityType::MomentLiked,
+            &existing.moment_id,
+            &format!("{}:{}", existing.moment_id, wallet),
+            &serde_json::json!({
+                "numLikes": updated.num_likes,
+            }),
+        )
+        .await;
+
         Ok(LikeMomentResponse {
             moment_id: existing.moment_id,
             num_likes: updated.num_likes,
@@ -570,5 +601,35 @@ impl MomentsService {
         }
 
         Ok(normalized)
+    }
+
+    async fn enqueue_onchain_activity<T: serde::Serialize>(
+        &self,
+        wallet: &str,
+        activity_type: ActivityType,
+        moment_id: &str,
+        entity_id: &str,
+        metadata: &T,
+    ) {
+        let Some(service) = &self.onchain_activity_service else {
+            return;
+        };
+
+        if let Err(e) = service
+            .enqueue_activity(RecordActivityInput {
+                user_wallet: wallet.trim().to_string(),
+                activity_type,
+                moment_id: moment_id.to_string(),
+                entity_id: entity_id.to_string(),
+                metadata_hash: metadata_hash(metadata),
+            })
+            .await
+        {
+            tracing::error!(
+                error = %e,
+                moment_id = %moment_id,
+                "Failed to enqueue onchain activity"
+            );
+        }
     }
 }

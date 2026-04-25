@@ -1,6 +1,7 @@
 use kult_browser_backend_rust::moments::social_media::repository::post_repository::PostRepository;
 use kult_browser_backend_rust::moments::social_media::worker::{PostScrapeWorker, SCRAPE_QUEUE};
 use kult_browser_backend_rust::moments::{MigrationWorker, MomentsRepository, MIGRATION_QUEUE};
+use kult_browser_backend_rust::onchain::{OnchainActivityRepository, OnchainActivityWorker};
 use kult_browser_backend_rust::player::repository::PlayerRepository;
 use kult_browser_backend_rust::redis::{connect as valkey_connect, ValkyQueue};
 use kult_browser_backend_rust::referral::service::ReferralService;
@@ -63,6 +64,21 @@ async fn main() {
     });
 
     let mut worker_handles = Vec::new();
+
+    if kult_browser_backend_rust::config::CONFIG
+        .onchain
+        .can_submit_transactions()
+    {
+        let onchain_repo = OnchainActivityRepository::new(&db);
+        let onchain_worker = OnchainActivityWorker::new(onchain_repo, shutdown_rx.clone());
+        let handle = tokio::spawn(async move {
+            onchain_worker.run().await;
+        });
+        worker_handles.push(handle);
+        tracing::info!("Onchain activity worker spawned as background task");
+    } else {
+        tracing::info!("Onchain activity worker not started");
+    }
 
     // Spawn background workers
     match valkey_connect().await {
