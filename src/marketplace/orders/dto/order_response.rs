@@ -18,6 +18,29 @@ pub struct CreateOrderRequest {
     pub tx_hash: Option<String>,
 }
 
+/// Request payload to prepare an order before client-side payment.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PrepareOrderRequest {
+    /// Listing ID to purchase.
+    pub listing_id: String,
+    /// Payment token contract address.
+    pub payment_token: String,
+    /// Quantity to purchase (default 1).
+    #[serde(default = "default_quantity")]
+    pub quantity: u32,
+}
+
+/// Request payload to confirm an order after broadcasting the transaction.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmOrderRequest {
+    /// Server-generated order ID from prepare step.
+    pub order_id: String,
+    /// Blockchain transaction hash.
+    pub tx_hash: String,
+}
+
 fn default_quantity() -> u32 {
     1
 }
@@ -27,14 +50,33 @@ fn default_quantity() -> u32 {
 #[serde(rename_all = "camelCase")]
 pub struct OrderResponse {
     pub id: String,
+    pub order_id: String,
     pub listing_id: String,
     pub player_id: String,
+    pub buyer_wallet: String,
     pub game_identification: String,
+    pub payment_token: String,
     pub price_paid: f64,
     pub quantity: u32,
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tx_hash: Option<String>,
+}
+
+/// Prepare-order response used by frontend to build/sign transaction.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PrepareOrderResponse {
+    pub order_id: String,
+    pub listing_id: String,
+    pub quantity: u32,
+    pub chain_id: u64,
+    pub contract_address: String,
+    pub game_id: String,
+    pub category: String,
+    pub item_id: String,
+    pub payment_token: String,
+    pub expected_price: f64,
 }
 
 /// Paginated list of orders.

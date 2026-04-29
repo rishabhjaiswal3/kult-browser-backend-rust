@@ -38,6 +38,10 @@ pub struct ListingModel {
     #[serde(rename = "gameIdentification")]
     pub game_identification: String,
 
+    /// Contract item ID used by UnifiedGameMarketplace.purchase itemId argument.
+    #[serde(rename = "contractItemId", default)]
+    pub contract_item_id: Option<String>,
+
     /// Listing status: active, delisted
     #[serde(default = "default_status")]
     pub status: String,

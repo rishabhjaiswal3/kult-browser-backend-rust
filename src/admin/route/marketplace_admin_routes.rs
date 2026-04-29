@@ -6,6 +6,7 @@ use crate::marketplace::orders::dto::OrdersQuery;
 use crate::marketplace::orders::service::OrderService;
 use crate::marketplace::repository::ListingRepository;
 use crate::marketplace::service::ListingService;
+use crate::player::repository::PlayerRepository;
 use axum::{
     extract::{Path, Query, State},
     response::{IntoResponse, Response},
@@ -23,9 +24,10 @@ struct AdminState {
 pub fn routes(db: Database) -> Router {
     let listing_repo = ListingRepository::new(&db);
     let order_repo = crate::marketplace::orders::repository::OrderRepository::new(&db);
+    let player_repo = PlayerRepository::new(&db);
     let state = AdminState {
         listing_service: ListingService::new(listing_repo.clone()),
-        order_service: OrderService::new(order_repo, listing_repo),
+        order_service: OrderService::new(order_repo, listing_repo, player_repo),
     };
 
     Router::new()

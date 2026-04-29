@@ -212,6 +212,12 @@ pub struct OrderListApiResponse {
     pub data: crate::marketplace::orders::dto::OrderListResponse,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct PrepareOrderApiResponse {
+    pub ok: bool,
+    pub data: crate::marketplace::orders::dto::PrepareOrderResponse,
+}
+
 pub struct SecurityAddon;
 
 impl Modify for SecurityAddon {
@@ -267,6 +273,8 @@ impl Modify for SecurityAddon {
         crate::marketplace::controller::listing_controller::get_listings,
         crate::marketplace::controller::listing_controller::get_listing,
         crate::marketplace::orders::controller::order_controller::create_order,
+        crate::marketplace::orders::controller::order_controller::prepare_order,
+        crate::marketplace::orders::controller::order_controller::confirm_order,
         crate::marketplace::orders::controller::order_controller::get_orders,
         crate::marketplace::orders::controller::order_controller::get_order
     ),
@@ -357,9 +365,15 @@ impl Modify for SecurityAddon {
             ListingListApiResponse,
             OrderApiResponse,
             OrderListApiResponse,
+            PrepareOrderApiResponse,
             crate::marketplace::dto::ListingResponse,
             crate::marketplace::dto::ListingListResponse,
+            crate::marketplace::dto::CreateListingRequest,
+            crate::marketplace::dto::UpdateListingRequest,
             crate::marketplace::orders::dto::CreateOrderRequest,
+            crate::marketplace::orders::dto::PrepareOrderRequest,
+            crate::marketplace::orders::dto::ConfirmOrderRequest,
+            crate::marketplace::orders::dto::PrepareOrderResponse,
             crate::marketplace::orders::dto::OrderResponse,
             crate::marketplace::orders::dto::OrderListResponse
         )

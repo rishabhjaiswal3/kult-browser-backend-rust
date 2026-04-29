@@ -1,6 +1,7 @@
 // src/player/model/player_profile.rs
 
 use serde::Serialize;
+use serde_json::Value;
 use utoipa::ToSchema;
 
 /// GET /api/player/profile - Full response
@@ -40,6 +41,10 @@ pub struct PlayerProfile {
     /// Per-game breakdown
     #[serde(rename = "gameScoresList")]
     pub game_scores_list: Vec<GameScoreEntry>,
+
+    /// Marketplace-owned assets grouped by game (from player metadata.gameAssets).
+    #[serde(rename = "purchasedAssets", skip_serializing_if = "Option::is_none")]
+    pub purchased_assets: Option<Value>,
 }
 
 /// Individual game score breakdown

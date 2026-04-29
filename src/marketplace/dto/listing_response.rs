@@ -19,6 +19,8 @@ pub struct ListingResponse {
     pub category: String,
     pub currency: String,
     pub game_identification: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contract_item_id: Option<String>,
     pub status: String,
 }
 

@@ -8,6 +8,7 @@ use crate::player::dto::{
 };
 use crate::player::repository::PlayerRepository;
 use mongodb::bson::Document;
+use serde_json::Value;
 
 use crate::agent::repository::agent_repository::AgentRepository;
 
@@ -207,6 +208,7 @@ impl PlayerService {
             total_games_played: game_scores_list.len() as u32,
             completed_quests: 0,
             game_scores_list,
+            purchased_assets: extract_purchased_assets(player.metadata.as_ref()),
         };
 
         Ok(PlayerProfileResponse {
@@ -252,4 +254,9 @@ impl PlayerService {
         tracing::info!(wallet = %wallet_address, new_name = %updated.name, "Player name updated");
         Ok(UpdateNameResponse { name: updated.name })
     }
+}
+
+fn extract_purchased_assets(metadata: Option<&Document>) -> Option<Value> {
+    let game_assets = metadata.and_then(|m| m.get("gameAssets"))?;
+    serde_json::to_value(game_assets).ok()
 }

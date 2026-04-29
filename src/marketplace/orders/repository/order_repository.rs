@@ -47,6 +47,14 @@ impl OrderRepository {
             .map_err(|e| e.to_string())
     }
 
+    /// Find order by backend orderId.
+    pub async fn find_by_order_id(&self, order_id: &str) -> Result<Option<OrderModel>, String> {
+        self.collection
+            .find_one(doc! { "orderId": order_id })
+            .await
+            .map_err(|e| e.to_string())
+    }
+
     /// Find orders by player ID (paginated).
     pub async fn find_by_player(
         &self,
@@ -110,6 +118,27 @@ impl OrderRepository {
             .find_one_and_update(
                 doc! { "_id": id },
                 doc! { "$set": { "status": status } },
+            )
+            .return_document(mongodb::options::ReturnDocument::After)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// Confirm an order by backend orderId with tx hash and completed status.
+    pub async fn confirm_by_order_id(
+        &self,
+        order_id: &str,
+        tx_hash: &str,
+    ) -> Result<Option<OrderModel>, String> {
+        self.collection
+            .find_one_and_update(
+                doc! { "orderId": order_id },
+                doc! {
+                    "$set": {
+                        "status": "completed",
+                        "txHash": tx_hash,
+                    }
+                },
             )
             .return_document(mongodb::options::ReturnDocument::After)
             .await

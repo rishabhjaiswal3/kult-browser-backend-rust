@@ -14,13 +14,25 @@ pub struct OrderModel {
     #[serde(rename = "listingId")]
     pub listing_id: ObjectId,
 
+    /// Backend-generated order identifier (used to bind pre/post-payment steps).
+    #[serde(rename = "orderId")]
+    pub order_id: String,
+
     /// Buyer's player ID (ObjectId as string from auth)
     #[serde(rename = "playerId")]
     pub player_id: String,
 
+    /// Buyer's wallet address at prepare time.
+    #[serde(rename = "buyerWallet")]
+    pub buyer_wallet: String,
+
     /// Denormalized game identification slug for easy queries
     #[serde(rename = "gameIdentification")]
     pub game_identification: String,
+
+    /// Payment token address selected for this order.
+    #[serde(rename = "paymentToken")]
+    pub payment_token: String,
 
     /// Price snapshot at purchase time
     #[serde(rename = "pricePaid")]

@@ -113,6 +113,7 @@ impl ListingService {
             category,
             currency,
             game_identification,
+            contract_item_id: request.contract_item_id,
             status: "active".to_string(),
             created_at: None,
             updated_at: None,
@@ -171,6 +172,9 @@ impl ListingService {
         }
         if let Some(cur) = request.currency {
             updates.insert("currency", cur);
+        }
+        if let Some(contract_item_id) = request.contract_item_id {
+            updates.insert("contractItemId", contract_item_id);
         }
 
         if updates.is_empty() {
@@ -233,6 +237,7 @@ impl ListingService {
             category: listing.category,
             currency: listing.currency,
             game_identification: listing.game_identification,
+            contract_item_id: listing.contract_item_id,
             status: listing.status,
         }
     }

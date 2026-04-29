@@ -239,6 +239,59 @@ impl PlayerRepository {
         Ok(result)
     }
 
+    /// Add a purchased marketplace asset into player's per-game metadata bucket.
+    pub async fn add_purchased_asset(
+        &self,
+        player_id: &str,
+        game_identification: &str,
+        item_id: &str,
+        category: &str,
+        item_name: &str,
+        order_id: &str,
+        tx_hash: Option<&str>,
+        quantity: u32,
+    ) -> Result<(), String> {
+        let oid = ObjectId::parse_str(player_id)
+            .map_err(|_| format!("Invalid ObjectId: {}", player_id))?;
+        let game_key = game_identification.trim();
+        if game_key.is_empty() {
+            return Err("game_identification cannot be empty".to_string());
+        }
+
+        let owned_key = format!("metadata.gameAssets.{}.ownedItemIds", game_key);
+        let purchases_key = format!("metadata.gameAssets.{}.purchases", game_key);
+
+        let mut purchase_doc = doc! {
+            "itemId": item_id,
+            "category": category,
+            "name": item_name,
+            "quantity": i32::try_from(quantity).unwrap_or(1),
+            "orderId": order_id,
+            "purchasedAt": BsonDateTime::now(),
+        };
+        if let Some(hash) = tx_hash {
+            if !hash.trim().is_empty() {
+                purchase_doc.insert("txHash", hash);
+            }
+        }
+
+        self.collection
+            .update_one(
+                doc! { "_id": oid },
+                doc! {
+                    "$set": { "updatedAt": BsonDateTime::now() },
+                    "$addToSet": {
+                        owned_key: item_id,
+                        purchases_key: purchase_doc,
+                    }
+                },
+            )
+            .await
+            .map_err(|e| format!("Failed to add purchased asset: {}", e))?;
+
+        Ok(())
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // BULK / QUERY OPERATIONS (for admin/analytics)
     // ─────────────────────────────────────────────────────────────────────

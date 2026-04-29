@@ -15,6 +15,7 @@ pub struct CreateListingRequest {
     pub category: String,
     pub currency: String,
     pub game_identification: String,
+    pub contract_item_id: Option<String>,
 }
 
 /// Request payload for updating a marketplace listing (admin).
@@ -28,6 +29,7 @@ pub struct UpdateListingRequest {
     pub price: Option<f64>,
     pub category: Option<String>,
     pub currency: Option<String>,
+    pub contract_item_id: Option<String>,
 }
 
 /// Response for delist operation.
