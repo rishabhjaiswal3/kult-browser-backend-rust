@@ -338,9 +338,8 @@ impl OrderService {
 
         let item_id = listing
             .contract_item_id
-            .as_deref()
-            .unwrap_or_else(|| order.listing_id.to_hex().as_str())
-            .to_string();
+            .clone()
+            .unwrap_or_else(|| order.listing_id.to_hex());
 
         self.player_repo
             .add_purchased_asset(
