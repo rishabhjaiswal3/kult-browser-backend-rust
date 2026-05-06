@@ -9,8 +9,8 @@ use mongodb::Database;
 use crate::game::repository::GameModelRepository;
 use crate::moments::comments;
 use crate::moments::controller::{
-    create_moment, delete_moment, get_feed, get_moment, get_my_moments, like_moment, update_moment,
-    MomentsState,
+    create_moment, delete_moment, get_feed, get_moment, get_my_moments, get_zg_proof, like_moment,
+    retry_zg_migration, update_moment, MomentsState,
 };
 use crate::moments::creators;
 use crate::moments::repository::{MomentLikesRepository, MomentsRepository};
@@ -64,6 +64,8 @@ pub fn routes(db: Database, queue: Option<ValkyQueue>) -> Router {
         .route("/", get(get_feed))
         .route("/my", get(get_my_moments))
         .route("/:moment_id/like", post(like_moment))
+        .route("/:moment_id/zg-proof", get(get_zg_proof))
+        .route("/:moment_id/zg/retry", post(retry_zg_migration))
         .route(
             "/:moment_id",
             get(get_moment).patch(update_moment).delete(delete_moment),

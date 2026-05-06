@@ -186,6 +186,71 @@ pub async fn get_moment(
     }
 }
 
+/// GET /api/moments/:moment_id/zg-proof
+/// Get public 0G storage proof for a moment.
+#[utoipa::path(
+    get,
+    path = "/api/moments/{moment_id}/zg-proof",
+    summary = "Get moment 0G proof",
+    description = "Returns the 0G storage hashes, tx hashes, gateway links, and migration status for a moment.",
+    params(
+        ("moment_id" = String, Path, description = "Shareable moment identifier")
+    ),
+    responses(
+        (status = 200, description = "Moment 0G proof", body = crate::openapi::MomentZgProofApiResponse),
+        (status = 404, description = "Moment not found", body = crate::openapi::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::openapi::ErrorResponse)
+    ),
+    tag = "Moments"
+)]
+pub async fn get_zg_proof(
+    State(state): State<MomentsState>,
+    Path(moment_id): Path<String>,
+) -> Response {
+    match state.service.get_zg_proof(&moment_id).await {
+        Ok(data) => ApiResponse::success(data).into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
+/// POST /api/moments/:moment_id/zg/retry
+/// Requeue 0G storage migration for a moment owned by the authenticated player.
+#[utoipa::path(
+    post,
+    path = "/api/moments/{moment_id}/zg/retry",
+    summary = "Retry moment 0G migration",
+    description = "Requeues the moment asset and metadata for 0G storage migration.",
+    security(
+        ("bearer_auth" = [])
+    ),
+    params(
+        ("moment_id" = String, Path, description = "Shareable moment identifier")
+    ),
+    responses(
+        (status = 200, description = "0G migration retry queued", body = crate::openapi::RetryZgMigrationApiResponse),
+        (status = 400, description = "Moment cannot be retried", body = crate::openapi::ErrorResponse),
+        (status = 401, description = "Missing or invalid bearer token", body = crate::openapi::ErrorResponse),
+        (status = 403, description = "Not the moment owner", body = crate::openapi::ErrorResponse),
+        (status = 404, description = "Moment not found", body = crate::openapi::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::openapi::ErrorResponse)
+    ),
+    tag = "Moments"
+)]
+pub async fn retry_zg_migration(
+    State(state): State<MomentsState>,
+    auth: AuthPlayer,
+    Path(moment_id): Path<String>,
+) -> Response {
+    match state
+        .service
+        .retry_zg_migration(&auth.wallet_address, &moment_id)
+        .await
+    {
+        Ok(data) => ApiResponse::success(data).into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
 /// PATCH /api/moments/:moment_id
 /// Update a moment (auth required, must own the moment)
 #[utoipa::path(

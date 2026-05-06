@@ -160,6 +160,78 @@ impl MomentsRepository {
         Ok(result.is_some())
     }
 
+    /// Mark a moment's 0G migration as failed while preserving retry context.
+    pub async fn mark_zg_failed(&self, moment_id: &str, error: &str) -> Result<bool, String> {
+        let result = self
+            .collection
+            .find_one_and_update(
+                doc! { "momentId": moment_id },
+                doc! {
+                    "$set": {
+                        "zgStatus": "failed",
+                        "zgError": error,
+                        "updatedAt": DateTime::now()
+                    }
+                },
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(result.is_some())
+    }
+
+    /// Mark a moment's 0G migration as pending after queueing a retry.
+    pub async fn mark_zg_pending(&self, moment_id: &str) -> Result<bool, String> {
+        let result = self
+            .collection
+            .find_one_and_update(
+                doc! { "momentId": moment_id },
+                doc! {
+                    "$set": {
+                        "zgStatus": "pending",
+                        "zgError": mongodb::bson::Bson::Null,
+                        "updatedAt": DateTime::now()
+                    }
+                },
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(result.is_some())
+    }
+
+    /// Persist complete 0G storage details for a moment.
+    pub async fn update_zg_storage_details(
+        &self,
+        moment_id: &str,
+        asset_zg_hash: &str,
+        asset_zg_tx_hash: Option<&str>,
+        metadata_zg_hash: &str,
+        metadata_zg_tx_hash: Option<&str>,
+    ) -> Result<bool, String> {
+        let result = self
+            .collection
+            .find_one_and_update(
+                doc! { "momentId": moment_id },
+                doc! {
+                    "$set": {
+                        "assetZgHash": asset_zg_hash,
+                        "assetZgTxHash": asset_zg_tx_hash,
+                        "metadataZgHash": metadata_zg_hash,
+                        "metadataZgTxHash": metadata_zg_tx_hash,
+                        "zgStatus": "stored",
+                        "zgError": mongodb::bson::Bson::Null,
+                        "zgUploadedAt": DateTime::now(),
+                        "updatedAt": DateTime::now()
+                    }
+                },
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(result.is_some())
+    }
+
     /// Increment total comments for a moment.
     pub async fn increment_num_comments(
         &self,

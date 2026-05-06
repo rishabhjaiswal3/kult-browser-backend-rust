@@ -88,7 +88,24 @@ async fn main() {
                 .await
                 .expect("Failed to create migration queue connection");
             let repo = MomentsRepository::new(&db);
-            let worker = MigrationWorker::new(migration_queue, repo, shutdown_rx.clone());
+            let migration_onchain_service = if kult_browser_backend_rust::config::CONFIG
+                .onchain
+                .can_submit_transactions()
+            {
+                Some(
+                    kult_browser_backend_rust::onchain::OnchainActivityService::new(
+                        OnchainActivityRepository::new(&db),
+                    ),
+                )
+            } else {
+                None
+            };
+            let worker = MigrationWorker::new(
+                migration_queue,
+                repo,
+                migration_onchain_service,
+                shutdown_rx.clone(),
+            );
 
             let handle = tokio::spawn(async move {
                 worker.run().await;

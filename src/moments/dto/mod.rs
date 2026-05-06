@@ -5,5 +5,7 @@ pub mod update_moment;
 
 pub use create_moment::{CreateMomentRequest, CreateMomentResponse};
 pub use like_moment::LikeMomentResponse;
-pub use moment_response::{MomentListResponse, MomentResponse};
+pub use moment_response::{
+    MomentListResponse, MomentResponse, MomentZgProofResponse, RetryZgMigrationResponse,
+};
 pub use update_moment::UpdateMomentRequest;

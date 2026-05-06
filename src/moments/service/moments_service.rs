@@ -5,7 +5,7 @@ use crate::game::repository::GameModelRepository;
 use crate::handler::AppError;
 use crate::moments::dto::{
     CreateMomentRequest, CreateMomentResponse, LikeMomentResponse, MomentListResponse,
-    MomentResponse, UpdateMomentRequest,
+    MomentResponse, MomentZgProofResponse, RetryZgMigrationResponse, UpdateMomentRequest,
 };
 use crate::moments::model::{MomentLikeModel, MomentModel};
 use crate::moments::repository::{CreateMomentLikeError, MomentLikesRepository, MomentsRepository};
@@ -127,6 +127,17 @@ impl MomentsService {
                 .filter(|u| !u.is_empty())
                 .map(|u| u.to_string()),
             asset_zg_hash: None,
+            metadata_zg_hash: None,
+            zg_status: request
+                .asset_url
+                .as_deref()
+                .map(str::trim)
+                .filter(|u| !u.is_empty())
+                .map(|_| "pending".to_string()),
+            asset_zg_tx_hash: None,
+            metadata_zg_tx_hash: None,
+            zg_error: None,
+            zg_uploaded_at: None,
             num_likes: 0,
             num_comments: 0,
             asset_metadata: request
@@ -176,6 +187,9 @@ impl MomentsService {
                     asset_id: moment_id.clone(),
                     asset_type,
                     asset_zg_hash: None,
+                    asset_zg_tx_hash: None,
+                    metadata_zg_hash: None,
+                    metadata_zg_tx_hash: None,
                     attempt: 1,
                 };
 
@@ -235,6 +249,85 @@ impl MomentsService {
             .ok_or_else(|| AppError::NotFound("Moment not found".to_string()))?;
 
         Ok(Self::to_response(moment))
+    }
+
+    /// Get the public 0G proof document for a moment.
+    pub async fn get_zg_proof(&self, moment_id: &str) -> Result<MomentZgProofResponse, AppError> {
+        let moment = self
+            .repo
+            .find_by_moment_id(moment_id)
+            .await
+            .map_err(AppError::Internal)?
+            .ok_or_else(|| AppError::NotFound("Moment not found".to_string()))?;
+
+        Ok(Self::to_zg_proof(moment))
+    }
+
+    /// Requeue a moment for 0G storage migration. Owner-only.
+    pub async fn retry_zg_migration(
+        &self,
+        wallet: &str,
+        moment_id: &str,
+    ) -> Result<RetryZgMigrationResponse, AppError> {
+        let moment = self
+            .repo
+            .find_by_moment_id(moment_id)
+            .await
+            .map_err(AppError::Internal)?
+            .ok_or_else(|| AppError::NotFound("Moment not found".to_string()))?;
+
+        if !moment.player_wallet_address.eq_ignore_ascii_case(wallet) {
+            return Err(AppError::Forbidden(
+                "You can retry migration only for your own moment".to_string(),
+            ));
+        }
+
+        let asset_url = moment
+            .asset_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+            .ok_or_else(|| {
+                AppError::BadRequest("Moment has no asset URL to migrate".to_string())
+            })?;
+
+        let asset_type = moment
+            .asset_metadata
+            .as_ref()
+            .and_then(|doc| doc.get_str("fileType").ok())
+            .unwrap_or("application/octet-stream")
+            .to_string();
+
+        let queue = self.queue.as_ref().ok_or_else(|| {
+            AppError::BadRequest("0G migration queue is not available".to_string())
+        })?;
+
+        let job = MigrationJob {
+            asset_url: asset_url.to_string(),
+            asset_id: moment.moment_id.clone(),
+            asset_type,
+            asset_zg_hash: moment.asset_zg_hash.clone(),
+            asset_zg_tx_hash: moment.asset_zg_tx_hash.clone(),
+            metadata_zg_hash: moment.metadata_zg_hash.clone(),
+            metadata_zg_tx_hash: moment.metadata_zg_tx_hash.clone(),
+            attempt: 1,
+        };
+
+        queue.push_async(&job).await.map_err(|e| {
+            tracing::error!(moment_id = %moment.moment_id, error = %e, "Failed to requeue 0G migration");
+            AppError::Internal(format!("Failed to queue 0G migration retry: {}", e))
+        })?;
+
+        self.repo
+            .mark_zg_pending(&moment.moment_id)
+            .await
+            .map_err(AppError::Internal)?;
+
+        Ok(RetryZgMigrationResponse {
+            moment_id: moment.moment_id,
+            zg_status: "pending".to_string(),
+            message: "0G migration retry queued".to_string(),
+        })
     }
 
     /// Get public feed of moments.
@@ -520,11 +613,40 @@ impl MomentsService {
 
     /// Convert MomentModel to MomentResponse.
     fn to_response(moment: MomentModel) -> MomentResponse {
+        let asset_zg_url = moment
+            .asset_zg_hash
+            .as_deref()
+            .and_then(|hash| crate::config::CONFIG.zg.gateway_url_for_hash(hash));
+        let metadata_zg_url = moment
+            .metadata_zg_hash
+            .as_deref()
+            .and_then(|hash| crate::config::CONFIG.zg.gateway_url_for_hash(hash));
+        let asset_zg_tx_url = moment
+            .asset_zg_tx_hash
+            .as_deref()
+            .and_then(|hash| crate::config::CONFIG.zg.explorer_url_for_tx(hash));
+        let metadata_zg_tx_url = moment
+            .metadata_zg_tx_hash
+            .as_deref()
+            .and_then(|hash| crate::config::CONFIG.zg.explorer_url_for_tx(hash));
+
         MomentResponse {
             moment_id: moment.moment_id,
             player_wallet_address: moment.player_wallet_address,
             asset_url: moment.asset_url,
             asset_zg_hash: moment.asset_zg_hash,
+            metadata_zg_hash: moment.metadata_zg_hash,
+            zg_status: moment.zg_status,
+            asset_zg_tx_hash: moment.asset_zg_tx_hash,
+            metadata_zg_tx_hash: moment.metadata_zg_tx_hash,
+            asset_zg_url,
+            metadata_zg_url,
+            asset_zg_tx_url,
+            metadata_zg_tx_url,
+            zg_error: moment.zg_error,
+            zg_uploaded_at: moment
+                .zg_uploaded_at
+                .map(|dt| dt.try_to_rfc3339_string().unwrap_or_default()),
             num_likes: moment.num_likes,
             num_comments: moment.num_comments,
             asset_metadata: moment
@@ -547,6 +669,24 @@ impl MomentsService {
                 .unwrap_or_default(),
             original_filename: moment.original_filename,
             file_size_bytes: moment.file_size_bytes,
+        }
+    }
+
+    fn to_zg_proof(moment: MomentModel) -> MomentZgProofResponse {
+        let response = Self::to_response(moment);
+        MomentZgProofResponse {
+            moment_id: response.moment_id,
+            zg_status: response.zg_status,
+            asset_zg_hash: response.asset_zg_hash,
+            metadata_zg_hash: response.metadata_zg_hash,
+            asset_zg_tx_hash: response.asset_zg_tx_hash,
+            metadata_zg_tx_hash: response.metadata_zg_tx_hash,
+            asset_zg_url: response.asset_zg_url,
+            metadata_zg_url: response.metadata_zg_url,
+            asset_zg_tx_url: response.asset_zg_tx_url,
+            metadata_zg_tx_url: response.metadata_zg_tx_url,
+            zg_uploaded_at: response.zg_uploaded_at,
+            zg_error: response.zg_error,
         }
     }
 

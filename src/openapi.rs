@@ -100,6 +100,18 @@ pub struct MomentApiResponse {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct MomentZgProofApiResponse {
+    pub ok: bool,
+    pub data: crate::moments::dto::MomentZgProofResponse,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RetryZgMigrationApiResponse {
+    pub ok: bool,
+    pub data: crate::moments::dto::RetryZgMigrationResponse,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct CommentApiResponse {
     pub ok: bool,
     pub data: crate::moments::comments::dto::CommentResponse,
@@ -253,6 +265,8 @@ impl Modify for SecurityAddon {
         crate::moments::controller::moments_controller::get_feed,
         crate::moments::controller::moments_controller::get_my_moments,
         crate::moments::controller::moments_controller::get_moment,
+        crate::moments::controller::moments_controller::get_zg_proof,
+        crate::moments::controller::moments_controller::retry_zg_migration,
         crate::moments::controller::moments_controller::like_moment,
         crate::moments::controller::moments_controller::update_moment,
         crate::moments::controller::moments_controller::delete_moment,
@@ -313,6 +327,8 @@ impl Modify for SecurityAddon {
             crate::moments::dto::LikeMomentResponse,
             crate::moments::dto::MomentListResponse,
             crate::moments::dto::MomentResponse,
+            crate::moments::dto::MomentZgProofResponse,
+            crate::moments::dto::RetryZgMigrationResponse,
             crate::moments::dto::UpdateMomentRequest,
             crate::moments::social_media::dto::RequeueSharedPostResponse,
             crate::moments::social_media::dto::SharedPostListResponse,
@@ -350,11 +366,13 @@ impl Modify for SecurityAddon {
             LoginApiResponse,
             MomentApiResponse,
             MomentListApiResponse,
+            MomentZgProofApiResponse,
             PlayerProfileApiResponse,
             PresignApiResponse,
             RequeueSharedPostApiResponse,
             RefreshLeaderboardApiResponse,
             RefreshLeaderboardResponse,
+            RetryZgMigrationApiResponse,
             ReferralErrorResponse,
             ReferralLinkResponse,
             SharedPostListApiResponse,
