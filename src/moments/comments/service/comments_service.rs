@@ -6,6 +6,7 @@ use crate::moments::comments::dto::{
 };
 use crate::moments::comments::model::CommentModel;
 use crate::moments::comments::repository::CommentsRepository;
+use crate::moments::da_events::{MomentDAEventModel, MomentDAEventRepository, EVENT_COMMENT_CREATED, EVENT_MOMENT_COMMENTED};
 use crate::moments::repository::MomentsRepository;
 use crate::onchain::{metadata_hash, ActivityType, OnchainActivityService, RecordActivityInput};
 
@@ -16,6 +17,7 @@ pub struct CommentsService {
     comments_repository: CommentsRepository,
     moments_repository: MomentsRepository,
     onchain_activity_service: Option<OnchainActivityService>,
+    da_event_repo: Option<MomentDAEventRepository>,
 }
 
 impl CommentsService {
@@ -28,7 +30,13 @@ impl CommentsService {
             comments_repository,
             moments_repository,
             onchain_activity_service,
+            da_event_repo: None,
         }
+    }
+
+    pub fn with_da_events(mut self, repo: MomentDAEventRepository) -> Self {
+        self.da_event_repo = Some(repo);
+        self
     }
 
     pub async fn create_comment(
@@ -78,6 +86,15 @@ impl CommentsService {
             moment_id,
             &created_id.to_hex(),
             &serde_json::json!({ "commentId": created_id.to_hex() }),
+        )
+        .await;
+
+        // Record this comment on 0G DA — top-level comment event for the moment timeline
+        self.enqueue_da_event(
+            moment_id,
+            EVENT_MOMENT_COMMENTED,
+            wallet,
+            serde_json::json!({ "commentId": created_id.to_hex() }),
         )
         .await;
 
@@ -195,6 +212,19 @@ impl CommentsService {
             &serde_json::json!({
                 "commentId": created_id.to_hex(),
                 "parentCommentId": parent_id.to_hex(),
+            }),
+        )
+        .await;
+
+        // Record reply on 0G DA — also fires a moment.commented event (reply = engagement)
+        self.enqueue_da_event(
+            &parent.moment_id,
+            EVENT_COMMENT_CREATED,
+            wallet,
+            serde_json::json!({
+                "commentId": created_id.to_hex(),
+                "parentCommentId": parent_id.to_hex(),
+                "isReply": true,
             }),
         )
         .await;
@@ -395,6 +425,27 @@ impl CommentsService {
         }
 
         Ok(())
+    }
+
+    async fn enqueue_da_event(
+        &self,
+        moment_id: &str,
+        event_type: &str,
+        wallet: &str,
+        data: serde_json::Value,
+    ) {
+        let Some(repo) = &self.da_event_repo else {
+            return;
+        };
+        let event = MomentDAEventModel::new(moment_id, event_type, wallet, data);
+        if let Err(e) = repo.create(event).await {
+            tracing::error!(
+                error = %e,
+                moment_id = %moment_id,
+                event_type = %event_type,
+                "Failed to enqueue comment DA event"
+            );
+        }
     }
 
     async fn enqueue_onchain_activity<T: serde::Serialize>(

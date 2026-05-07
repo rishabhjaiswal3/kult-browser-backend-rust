@@ -64,6 +64,12 @@ pub struct RefreshLeaderboardApiResponse {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct NonceApiResponse {
+    pub ok: bool,
+    pub data: crate::player::dto::NonceResponse,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct LoginApiResponse {
     pub ok: bool,
     pub data: crate::player::dto::LoginResponse,
@@ -364,6 +370,7 @@ impl Modify for SecurityAddon {
             HealthResponse,
             LikeMomentApiResponse,
             LoginApiResponse,
+            NonceApiResponse,
             MomentApiResponse,
             MomentListApiResponse,
             MomentZgProofApiResponse,

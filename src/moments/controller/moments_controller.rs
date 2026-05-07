@@ -370,3 +370,56 @@ pub async fn like_moment(
         Err(e) => e.into_response(),
     }
 }
+
+/// POST /api/moments/:moment_id/share
+/// Record a share event on 0G DA (auth required)
+pub async fn share_moment(
+    State(state): State<MomentsState>,
+    auth: AuthPlayer,
+    Path(moment_id): Path<String>,
+) -> Response {
+    match state
+        .service
+        .share_moment(&auth.wallet_address, &moment_id)
+        .await
+    {
+        Ok(data) => ApiResponse::success(data).into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
+/// GET /api/moments/:moment_id/da-events
+/// Get the 0G DA event timeline for a moment (public)
+pub async fn get_da_events(
+    State(state): State<MomentsState>,
+    Path(moment_id): Path<String>,
+) -> Response {
+    match state.service.get_da_events(&moment_id).await {
+        Ok(data) => ApiResponse::success(data).into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
+/// GET /api/moments/:moment_id/proof
+/// Full proof bundle: storage + DA + compute (public)
+pub async fn get_proof(
+    State(state): State<MomentsState>,
+    Path(moment_id): Path<String>,
+) -> Response {
+    match state.service.get_proof(&moment_id).await {
+        Ok(data) => ApiResponse::success(data).into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
+/// GET /api/moments/:moment_id/pipeline
+/// Per-layer pipeline status (public)
+pub async fn get_pipeline(
+    State(state): State<MomentsState>,
+    Path(moment_id): Path<String>,
+) -> Response {
+    match state.service.get_pipeline(&moment_id).await {
+        Ok(data) => ApiResponse::success(data).into_response(),
+        Err(e) => e.into_response(),
+    }
+}

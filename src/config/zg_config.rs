@@ -1,29 +1,34 @@
 // src/config/zg_config.rs
-// 0G Storage configuration
+// 0G Storage + Compute configuration
 
 use std::env;
 
-/// 0G Storage CLI configuration
+/// 0G Storage CLI + Compute configuration
 #[derive(Debug, Clone)]
 pub struct ZgConfig {
-    /// Path to the 0g-storage-client binary
+    // === Storage CLI ===
     pub binary_path: String,
-    /// Blockchain RPC endpoint (--url)
     pub rpc_url: String,
-    /// Private key for signing transactions (--key)
     pub private_key: String,
-    /// Storage indexer endpoint (--indexer)
     pub indexer_url: String,
-    /// RPC timeout (--rpc-timeout)
     pub rpc_timeout: String,
-    /// RPC retry count (--rpc-retry-count)
     pub rpc_retry_count: u32,
-    /// RPC retry interval (--rpc-retry-interval)
     pub rpc_retry_interval: String,
-    /// Optional public gateway URL template for 0G file access.
     pub gateway_url: Option<String>,
-    /// Optional explorer transaction URL template for 0G chain txs.
     pub explorer_tx_url: Option<String>,
+
+    // === DA (Data Availability disperser) ===
+    /// HTTP gateway URL for the 0G DA disperser.
+    /// Example: https://da-disperser.0g.ai
+    pub da_disperser_url: Option<String>,
+
+    // === Compute (OpenAI-compatible inference) ===
+    /// Provider service base URL. Obtained via: 0g-compute-cli inference list-providers
+    pub compute_provider_url: Option<String>,
+    /// Bearer token (app-sk-<SECRET>). Obtained via: 0g-compute-cli inference get-secret --provider <ADDRESS>
+    pub compute_api_key: Option<String>,
+    /// Model name as reported by the provider
+    pub compute_model: String,
 }
 
 impl ZgConfig {
@@ -53,9 +58,19 @@ impl ZgConfig {
                 .unwrap_or_else(|_| "3s".to_string()),
 
             gateway_url: optional_env("ZG_GATEWAY_URL"),
-
             explorer_tx_url: optional_env("ZG_EXPLORER_TX_URL"),
+
+            da_disperser_url: optional_env("ZG_DA_DISPERSER_URL"),
+
+            compute_provider_url: optional_env("ZG_COMPUTE_PROVIDER_URL"),
+            compute_api_key: optional_env("ZG_COMPUTE_API_KEY"),
+            compute_model: env::var("ZG_COMPUTE_MODEL")
+                .unwrap_or_else(|_| "gpt-4o-mini".to_string()),
         }
+    }
+
+    pub fn has_compute(&self) -> bool {
+        self.compute_provider_url.is_some() && self.compute_api_key.is_some()
     }
 
     pub fn gateway_url_for_hash(&self, root_hash: &str) -> Option<String> {

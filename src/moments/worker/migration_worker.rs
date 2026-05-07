@@ -10,6 +10,7 @@ use tokio::time::timeout;
 
 use crate::external::spaces;
 use crate::external::storage;
+use crate::moments::da_events::{MomentDAEventModel, MomentDAEventRepository, EVENT_ASSET_MIGRATED};
 use crate::moments::model::MomentModel;
 use crate::moments::repository::MomentsRepository;
 use crate::onchain::{metadata_hash, ActivityType, OnchainActivityService, RecordActivityInput};
@@ -73,6 +74,7 @@ pub struct MigrationWorker {
     queue: ValkyQueue,
     repo: MomentsRepository,
     onchain_activity_service: Option<OnchainActivityService>,
+    da_event_repo: Option<MomentDAEventRepository>,
     max_retries: u32,
     poll_timeout_secs: u32,
     shutdown_rx: watch::Receiver<bool>,
@@ -90,10 +92,16 @@ impl MigrationWorker {
             queue,
             repo,
             onchain_activity_service,
+            da_event_repo: None,
             max_retries: 3,
             poll_timeout_secs: IDLE_POLL_TIMEOUT_SECS,
             shutdown_rx,
         }
+    }
+
+    pub fn with_da_events(mut self, repo: MomentDAEventRepository) -> Self {
+        self.da_event_repo = Some(repo);
+        self
     }
 
     /// Run the worker loop until a shutdown signal is received.
@@ -121,6 +129,7 @@ impl MigrationWorker {
         let queue = Arc::new(self.queue.clone());
         let repo = Arc::new(self.repo.clone());
         let onchain_activity_service = Arc::new(self.onchain_activity_service.clone());
+        let da_event_repo = Arc::new(self.da_event_repo.clone());
         let max_retries = self.max_retries;
 
         loop {
@@ -153,8 +162,9 @@ impl MigrationWorker {
                             let q = queue.clone();
                             let r = repo.clone();
                             let onchain = onchain_activity_service.clone();
+                            let da_repo = da_event_repo.clone();
                             tokio::spawn(async move {
-                                match Self::process_job_static(&r, onchain.as_ref().as_ref(), job).await {
+                                match Self::process_job_static(&r, onchain.as_ref().as_ref(), da_repo.as_ref().as_ref(), job).await {
                                     JobProcessingResult::Complete => {
                                         if let Err(e) = q.ack_async(&raw_data).await {
                                             tracing::error!(error = %e, "Failed to ACK completed job");
@@ -248,6 +258,7 @@ impl MigrationWorker {
     async fn process_job_static(
         repo: &MomentsRepository,
         onchain_activity_service: Option<&OnchainActivityService>,
+        da_event_repo: Option<&MomentDAEventRepository>,
         job: MigrationJob,
     ) -> JobProcessingResult {
         let (root_hash, asset_tx_hash) = match job
@@ -407,6 +418,29 @@ impl MigrationWorker {
                     )
                     .await;
                 }
+
+                // Record the migration on 0G DA — proves asset is permanently stored
+                if let Some(da_repo) = da_event_repo {
+                    let event = MomentDAEventModel::new(
+                        &moment.moment_id,
+                        EVENT_ASSET_MIGRATED,
+                        &moment.player_wallet_address,
+                        serde_json::json!({
+                            "assetZgHash": &root_hash,
+                            "assetZgTxHash": asset_tx_hash.as_deref(),
+                            "metadataZgHash": &metadata_hash_value,
+                            "metadataZgTxHash": metadata_tx_hash.as_deref(),
+                        }),
+                    );
+                    if let Err(e) = da_repo.create(event).await {
+                        tracing::warn!(
+                            moment_id = %moment.moment_id,
+                            error = %e,
+                            "Failed to enqueue asset_migrated DA event"
+                        );
+                    }
+                }
+
                 JobProcessingResult::Complete
             }
             Ok(false) => JobProcessingResult::Failed {

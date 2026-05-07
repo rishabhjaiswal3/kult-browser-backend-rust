@@ -7,6 +7,7 @@ use crate::moments::comments::controller::{
 };
 use crate::moments::comments::repository::CommentsRepository;
 use crate::moments::comments::service::CommentsService;
+use crate::moments::da_events::MomentDAEventRepository;
 use crate::moments::MomentsRepository;
 use crate::onchain::{OnchainActivityRepository, OnchainActivityService};
 
@@ -16,11 +17,13 @@ pub fn routes(db: Database) -> Router {
     let onchain_activity_service = Some(OnchainActivityService::new(
         OnchainActivityRepository::new(&db),
     ));
+    let da_event_repo = MomentDAEventRepository::new(&db);
     let service = CommentsService::new(
         comments_repository,
         moments_repository,
         onchain_activity_service,
-    );
+    )
+    .with_da_events(da_event_repo);
     let state = CommentsState { service };
 
     Router::new()

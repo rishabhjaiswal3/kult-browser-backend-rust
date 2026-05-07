@@ -3,10 +3,11 @@ use crate::leaderboard::repository::GlobalLeaderboardRepository;
 use crate::leaderboard::service::GameLeaderboardService;
 use crate::middleware::AuthService;
 use crate::player::dto::{
-    GameScoreEntry, LoginRequest, LoginResponse, PlayerInfo, PlayerProfile, PlayerProfileResponse,
-    UpdateNameRequest, UpdateNameResponse,
+    GameScoreEntry, LoginRequest, LoginResponse, NonceResponse, PlayerInfo, PlayerProfile,
+    PlayerProfileResponse, UpdateNameRequest, UpdateNameResponse,
 };
 use crate::player::repository::PlayerRepository;
+use crate::player::siwe::{extract_nonce, verify_wallet_signature, NonceRepository};
 use mongodb::bson::Document;
 use serde_json::Value;
 
@@ -22,6 +23,7 @@ pub struct PlayerService {
     game_lb_service: GameLeaderboardService,
     agent_repo: AgentRepository,
     anti_fraud_service: Option<std::sync::Arc<AntiFraudService>>,
+    nonce_repo: NonceRepository,
 }
 
 impl PlayerService {
@@ -31,6 +33,7 @@ impl PlayerService {
         game_lb_service: GameLeaderboardService,
         agent_repo: AgentRepository,
         anti_fraud_service: Option<std::sync::Arc<AntiFraudService>>,
+        nonce_repo: NonceRepository,
     ) -> Self {
         Self {
             player_repo,
@@ -38,25 +41,69 @@ impl PlayerService {
             game_lb_service,
             agent_repo,
             anti_fraud_service,
+            nonce_repo,
         }
     }
 
-    /// Handle player login (find or create).
+    /// Issue a one-time SIWE nonce for the given wallet address.
+    pub async fn get_nonce(&self, wallet: &str) -> Result<NonceResponse, AppError> {
+        let nonce = nanoid::nanoid!(16);
+        self.nonce_repo
+            .create_nonce(wallet, &nonce)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, wallet = %wallet, "Failed to store SIWE nonce");
+                AppError::Internal(e.to_string())
+            })?;
+        Ok(NonceResponse { nonce })
+    }
+
+    /// Handle player login (find or create) — requires SIWE signature verification.
     pub async fn login(
         &self,
         request: LoginRequest,
         ip_address: &str,
     ) -> Result<LoginResponse, AppError> {
         let wallet = request.wallet_address.trim().to_string();
-        // ...
         tracing::info!(wallet = %wallet, "Player login attempt");
 
         if wallet.is_empty() {
-            tracing::warn!("Login attempt with empty wallet address");
-            return Err(AppError::BadRequest(
-                "walletAddress is required".to_string(),
+            return Err(AppError::BadRequest("walletAddress is required".to_string()));
+        }
+
+        // --- SIWE verification ---
+        // 1. Verify the signature recovers to the claimed wallet
+        if let Err(reason) = verify_wallet_signature(&wallet, &request.message, &request.signature)
+        {
+            tracing::warn!(wallet = %wallet, reason = %reason, "SIWE signature verification failed");
+            return Err(AppError::Unauthorized(
+                "Invalid signature — wallet ownership not proven".to_string(),
             ));
         }
+
+        // 2. Extract nonce from the signed message and verify it was issued by us
+        let nonce = extract_nonce(&request.message).ok_or_else(|| {
+            tracing::warn!(wallet = %wallet, "SIWE message missing Nonce field");
+            AppError::BadRequest("Invalid SIWE message: missing Nonce field".to_string())
+        })?;
+
+        let nonce_valid = self
+            .nonce_repo
+            .consume_nonce(&wallet, nonce)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, wallet = %wallet, "DB error consuming SIWE nonce");
+                AppError::Internal(e.to_string())
+            })?;
+
+        if !nonce_valid {
+            tracing::warn!(wallet = %wallet, nonce = %nonce, "SIWE nonce not found or already used");
+            return Err(AppError::Unauthorized(
+                "Nonce invalid or expired — request a new nonce and sign again".to_string(),
+            ));
+        }
+
+        tracing::info!(wallet = %wallet, "SIWE verification passed");
 
         let name = request.name.unwrap_or_else(|| {
             let suffix = format!("{:x}", chrono::Utc::now().timestamp_millis())

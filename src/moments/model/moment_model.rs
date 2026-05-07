@@ -99,6 +99,37 @@ pub struct MomentModel {
     #[serde(rename = "socialMediaLinks", default)]
     pub social_media_links: Option<mongodb::bson::Document>,
 
+    // === 0G Compute AI Analysis ===
+    #[serde(rename = "aiCaption", default)]
+    pub ai_caption: Option<String>,
+
+    #[serde(rename = "aiRankScore", default)]
+    pub ai_rank_score: Option<u32>,
+
+    #[serde(rename = "aiHighlights", default)]
+    pub ai_highlights: Vec<String>,
+
+    /// "pending" | "processed" | "failed" | "unavailable"
+    #[serde(rename = "aiStatus", default)]
+    pub ai_status: Option<String>,
+
+    // === 0G Compute Gameplay Intelligence ===
+    /// Gameplay classification: "clutch" | "speedrun" | "strategy" | "ai_duel" | "domination" | "highlight"
+    #[serde(rename = "aiMomentType", default)]
+    pub ai_moment_type: Option<String>,
+
+    /// Skill score 0-100 (reaction speed, precision, decision quality)
+    #[serde(rename = "aiSkillScore", default)]
+    pub ai_skill_score: Option<u32>,
+
+    /// Reaction quality: "low" | "medium" | "high" | "exceptional"
+    #[serde(rename = "aiReactionQuality", default)]
+    pub ai_reaction_quality: Option<String>,
+
+    /// Rarity tier: "common" | "rare" | "epic" | "legendary"
+    #[serde(rename = "aiRarity", default)]
+    pub ai_rarity: Option<String>,
+
     /// Timestamps
     #[serde(rename = "createdAt", default)]
     pub created_at: Option<mongodb::bson::DateTime>,

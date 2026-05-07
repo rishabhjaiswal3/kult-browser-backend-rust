@@ -98,6 +98,32 @@ pub struct MomentResponse {
     #[schema(value_type = Object)]
     pub social_media_links: Option<serde_json::Value>,
 
+    // === 0G Compute AI ===
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_caption: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_rank_score: Option<u32>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ai_highlights: Vec<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_status: Option<String>,
+
+    // === 0G Compute Gameplay Intelligence ===
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_moment_type: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_skill_score: Option<u32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_reaction_quality: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_rarity: Option<String>,
+
     /// Created timestamp (ISO 8601)
     pub created_at: String,
 
@@ -146,5 +172,124 @@ pub struct MomentZgProofResponse {
 pub struct RetryZgMigrationResponse {
     pub moment_id: String,
     pub zg_status: String,
+    pub message: String,
+}
+
+/// A single DA event record for the moment timeline.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MomentDAEventResponse {
+    pub event_type: String,
+    pub actor_wallet: String,
+    /// "pending" | "dispersing" | "finalized" | "failed"
+    pub da_status: String,
+    // DA disperser receipt (populated after finalization)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub da_request_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub da_batch_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub da_blob_index: Option<u32>,
+    /// Root hash of the DA batch — the primary on-chain proof anchor
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub da_batch_header_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub da_confirmation_block: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub da_finalized_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub da_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+}
+
+/// Full proof bundle for a moment — returned by GET /moments/:id/proof.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MomentProofResponse {
+    pub moment_id: String,
+    pub storage: StorageProofResponse,
+    pub da: DaProofResponse,
+    pub compute: ComputeProofResponse,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageProofResponse {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset_tx_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata_tx_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uploaded_at: Option<String>,
+    pub verified: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DaProofResponse {
+    pub total_events: usize,
+    pub finalized_events: usize,
+    pub events: Vec<MomentDAEventResponse>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputeProofResponse {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caption: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rank_score: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moment_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skill_score: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rarity: Option<String>,
+}
+
+/// Pipeline processing status for a moment across all 0G layers.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MomentPipelineResponse {
+    pub moment_id: String,
+    pub storage: PipelineStageStatus,
+    pub da: DaPipelineStatus,
+    pub compute: PipelineStageStatus,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PipelineStageStatus {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DaPipelineStatus {
+    pub total: usize,
+    pub finalized: usize,
+    pub dispersing: usize,
+    pub pending: usize,
+    pub failed: usize,
+}
+
+/// Response from POST /moments/:id/share
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareMomentResponse {
+    pub moment_id: String,
     pub message: String,
 }

@@ -8,6 +8,17 @@ use regex::escape as escape_regex;
 use crate::config::CONFIG;
 use crate::moments::model::MomentModel;
 
+/// All AI analysis fields to persist in one update.
+pub struct AiAnalysisUpdate {
+    pub caption: String,
+    pub rank_score: u32,
+    pub highlights: Vec<String>,
+    pub moment_type: Option<String>,
+    pub skill_score: Option<u32>,
+    pub reaction_quality: Option<String>,
+    pub rarity: Option<String>,
+}
+
 /// Repository for moment database operations.
 #[derive(Clone)]
 pub struct MomentsRepository {
@@ -268,6 +279,99 @@ impl MomentsRepository {
             .map_err(|e| e.to_string())?;
 
         Ok(result.matched_count > 0)
+    }
+
+    /// Find moments stored on 0G but not yet AI-analyzed.
+    pub async fn find_pending_ai_analysis(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<crate::moments::model::MomentModel>, String> {
+        let cursor = self
+            .collection
+            .find(doc! {
+                "zgStatus": "stored",
+                "aiStatus": { "$exists": false }
+            })
+            .sort(doc! { "zgUploadedAt": 1 })
+            .limit(limit)
+            .await
+            .map_err(|e| e.to_string())?;
+        cursor.try_collect().await.map_err(|e| e.to_string())
+    }
+
+    /// Mark a moment as AI analysis in-progress (prevents double-pickup).
+    pub async fn mark_ai_pending(&self, moment_id: &str) -> Result<(), String> {
+        self.collection
+            .update_one(
+                doc! { "momentId": moment_id },
+                doc! { "$set": { "aiStatus": "pending", "updatedAt": DateTime::now() } },
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Persist full AI analysis results including gameplay intelligence signals.
+    pub async fn update_ai_analysis(
+        &self,
+        moment_id: &str,
+        update: &AiAnalysisUpdate,
+    ) -> Result<(), String> {
+        let mut set_doc = doc! {
+            "aiStatus": "processed",
+            "aiCaption": &update.caption,
+            "aiRankScore": update.rank_score as i32,
+            "aiHighlights": &update.highlights,
+            "updatedAt": DateTime::now(),
+        };
+        if let Some(ref v) = update.moment_type {
+            set_doc.insert("aiMomentType", v.as_str());
+        }
+        if let Some(v) = update.skill_score {
+            set_doc.insert("aiSkillScore", v as i32);
+        }
+        if let Some(ref v) = update.reaction_quality {
+            set_doc.insert("aiReactionQuality", v.as_str());
+        }
+        if let Some(ref v) = update.rarity {
+            set_doc.insert("aiRarity", v.as_str());
+        }
+        self.collection
+            .update_one(doc! { "momentId": moment_id }, doc! { "$set": set_doc })
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Mark AI analysis as failed.
+    pub async fn mark_ai_failed(&self, moment_id: &str, error: &str) -> Result<(), String> {
+        self.collection
+            .update_one(
+                doc! { "momentId": moment_id },
+                doc! { "$set": {
+                    "aiStatus": "failed",
+                    "updatedAt": DateTime::now(),
+                }},
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        tracing::warn!(moment_id = %moment_id, error = %error, "AI analysis failed");
+        Ok(())
+    }
+
+    /// Mark AI as unavailable (compute not configured).
+    pub async fn mark_ai_unavailable(&self, moment_id: &str) -> Result<(), String> {
+        self.collection
+            .update_one(
+                doc! { "momentId": moment_id },
+                doc! { "$set": {
+                    "aiStatus": "unavailable",
+                    "updatedAt": DateTime::now(),
+                }},
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(())
     }
 
     fn build_public_feed_filter(

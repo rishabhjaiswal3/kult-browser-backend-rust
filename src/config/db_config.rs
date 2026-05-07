@@ -44,6 +44,8 @@ pub struct DbConfig {
     pub marketplace_orders_collection: String,
     /// Onchain activity jobs collection name (default: onchain_activity_jobs)
     pub onchain_activity_jobs_collection: String,
+    /// SIWE nonces collection name (default: player_nonces)
+    pub player_nonces_collection: String,
 }
 
 impl DbConfig {
@@ -110,6 +112,9 @@ impl DbConfig {
 
             onchain_activity_jobs_collection: env::var("ONCHAIN_ACTIVITY_JOBS_COLL")
                 .unwrap_or_else(|_| "onchain_activity_jobs".to_string()),
+
+            player_nonces_collection: env::var("PLAYER_NONCES_COLL")
+                .unwrap_or_else(|_| "player_nonces".to_string()),
         }
     }
 }

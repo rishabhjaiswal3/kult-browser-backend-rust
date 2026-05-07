@@ -3,12 +3,18 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-/// Payload for registering or logging in.
+/// Payload for registering or logging in via SIWE (EIP-4361).
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct LoginRequest {
-    /// The Ethereum wallet address
+    /// The Ethereum wallet address (must match the signer of `message`)
     #[serde(rename = "walletAddress")]
     pub wallet_address: String,
+
+    /// The full SIWE message that was signed (EIP-4361 format)
+    pub message: String,
+
+    /// The hex-encoded secp256k1 signature produced by `personal_sign`
+    pub signature: String,
 
     /// Optional initial display name
     pub name: Option<String>,
@@ -21,6 +27,12 @@ pub struct LoginRequest {
     #[serde(default)]
     #[serde(rename = "referralCode")]
     pub referral_code: Option<String>,
+}
+
+/// GET /api/player/nonce - Response body
+#[derive(Debug, Serialize, ToSchema)]
+pub struct NonceResponse {
+    pub nonce: String,
 }
 
 /// POST /api/player/login - Response body
