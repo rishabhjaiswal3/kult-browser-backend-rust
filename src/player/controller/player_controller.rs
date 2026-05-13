@@ -2,14 +2,49 @@ use crate::handler::{ApiResponse, AppError};
 use crate::middleware::AuthPlayer;
 use crate::player::dto::{LoginRequest, UpdateNameRequest};
 use crate::player::PlayerService;
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use serde::Deserialize;
 
 /// Shared state for player endpoints
 #[derive(Clone)]
 pub struct PlayerState {
     pub player_service: PlayerService,
+}
+
+#[derive(Deserialize)]
+pub struct NonceQuery {
+    #[serde(rename = "walletAddress")]
+    pub wallet_address: String,
+}
+
+/// GET /api/player/nonce
+#[utoipa::path(
+    get,
+    path = "/api/player/nonce",
+    params(
+        ("walletAddress" = String, Query, description = "Ethereum wallet address requesting a nonce")
+    ),
+    responses(
+        (status = 200, description = "One-time SIWE nonce issued", body = crate::openapi::NonceApiResponse),
+        (status = 400, description = "Missing walletAddress query param", body = crate::openapi::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::openapi::ErrorResponse)
+    ),
+    tag = "Player"
+)]
+pub async fn get_nonce(
+    State(state): State<PlayerState>,
+    Query(params): Query<NonceQuery>,
+) -> Response {
+    if params.wallet_address.is_empty() {
+        return AppError::BadRequest("walletAddress query param is required".to_string())
+            .into_response();
+    }
+    match state.player_service.get_nonce(&params.wallet_address).await {
+        Ok(data) => ApiResponse::success(data).into_response(),
+        Err(e) => e.into_response(),
+    }
 }
 
 /// POST /api/player/login

@@ -65,6 +65,7 @@ tower-http = { version = "0.5", features = ["trace", "cors"] }
 nanoid = "0.4"
 redis = { version = "0.27", features = ["tokio-rustls-comp"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
+base64 = "0.22"
 aws-config = "1.8.13"
 aws-sdk-s3 = "1.122.0"
 alloy = { version = "1.7.3", features = ["signers", "signer-local", "rand"] }

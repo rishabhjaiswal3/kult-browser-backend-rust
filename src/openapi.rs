@@ -64,6 +64,12 @@ pub struct RefreshLeaderboardApiResponse {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct NonceApiResponse {
+    pub ok: bool,
+    pub data: crate::player::dto::NonceResponse,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct LoginApiResponse {
     pub ok: bool,
     pub data: crate::player::dto::LoginResponse,
@@ -97,6 +103,18 @@ pub struct MomentListApiResponse {
 pub struct MomentApiResponse {
     pub ok: bool,
     pub data: crate::moments::dto::MomentResponse,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct MomentZgProofApiResponse {
+    pub ok: bool,
+    pub data: crate::moments::dto::MomentZgProofResponse,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RetryZgMigrationApiResponse {
+    pub ok: bool,
+    pub data: crate::moments::dto::RetryZgMigrationResponse,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -253,6 +271,8 @@ impl Modify for SecurityAddon {
         crate::moments::controller::moments_controller::get_feed,
         crate::moments::controller::moments_controller::get_my_moments,
         crate::moments::controller::moments_controller::get_moment,
+        crate::moments::controller::moments_controller::get_zg_proof,
+        crate::moments::controller::moments_controller::retry_zg_migration,
         crate::moments::controller::moments_controller::like_moment,
         crate::moments::controller::moments_controller::update_moment,
         crate::moments::controller::moments_controller::delete_moment,
@@ -313,6 +333,8 @@ impl Modify for SecurityAddon {
             crate::moments::dto::LikeMomentResponse,
             crate::moments::dto::MomentListResponse,
             crate::moments::dto::MomentResponse,
+            crate::moments::dto::MomentZgProofResponse,
+            crate::moments::dto::RetryZgMigrationResponse,
             crate::moments::dto::UpdateMomentRequest,
             crate::moments::social_media::dto::RequeueSharedPostResponse,
             crate::moments::social_media::dto::SharedPostListResponse,
@@ -348,13 +370,16 @@ impl Modify for SecurityAddon {
             HealthResponse,
             LikeMomentApiResponse,
             LoginApiResponse,
+            NonceApiResponse,
             MomentApiResponse,
             MomentListApiResponse,
+            MomentZgProofApiResponse,
             PlayerProfileApiResponse,
             PresignApiResponse,
             RequeueSharedPostApiResponse,
             RefreshLeaderboardApiResponse,
             RefreshLeaderboardResponse,
+            RetryZgMigrationApiResponse,
             ReferralErrorResponse,
             ReferralLinkResponse,
             SharedPostListApiResponse,

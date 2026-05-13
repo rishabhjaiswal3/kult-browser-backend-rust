@@ -1,6 +1,11 @@
+use kult_browser_backend_rust::external::compute::ZgComputeClient;
+use kult_browser_backend_rust::external::da::ZgDaClient;
+use kult_browser_backend_rust::moments::da_events::MomentDAEventRepository;
 use kult_browser_backend_rust::moments::social_media::repository::post_repository::PostRepository;
 use kult_browser_backend_rust::moments::social_media::worker::{PostScrapeWorker, SCRAPE_QUEUE};
-use kult_browser_backend_rust::moments::{MigrationWorker, MomentsRepository, MIGRATION_QUEUE};
+use kult_browser_backend_rust::moments::{
+    ComputeWorker, DAEventWorker, MigrationWorker, MomentsRepository, MIGRATION_QUEUE,
+};
 use kult_browser_backend_rust::onchain::{OnchainActivityRepository, OnchainActivityWorker};
 use kult_browser_backend_rust::player::repository::PlayerRepository;
 use kult_browser_backend_rust::redis::{connect as valkey_connect, ValkyQueue};
@@ -80,6 +85,36 @@ async fn main() {
         tracing::info!("Onchain activity worker not started");
     }
 
+    // DA Event Worker — uploads event blobs to 0G DA (requires ZG_DA_DISPERSER_URL)
+    if let Some(da_client) = ZgDaClient::from_config() {
+        let da_event_repo = MomentDAEventRepository::new(&db);
+        let da_worker = DAEventWorker::new(da_event_repo, da_client, shutdown_rx.clone());
+        let handle = tokio::spawn(async move {
+            da_worker.run().await;
+        });
+        worker_handles.push(handle);
+        tracing::info!("DA event worker spawned as background task");
+    } else {
+        tracing::warn!("DA event worker not started — set ZG_DA_DISPERSER_URL to enable real 0G DA");
+    }
+
+    // 0G Compute Worker — AI analysis of stored moments (optional, requires ZG_COMPUTE_* env vars)
+    if kult_browser_backend_rust::config::CONFIG.zg.has_compute() {
+        if let Some(compute_client) = ZgComputeClient::from_config() {
+            let compute_repo = MomentsRepository::new(&db);
+            let compute_da_repo = MomentDAEventRepository::new(&db);
+            let compute_worker = ComputeWorker::new(compute_repo, compute_client, shutdown_rx.clone())
+                .with_da_events(compute_da_repo);
+            let handle = tokio::spawn(async move {
+                compute_worker.run().await;
+            });
+            worker_handles.push(handle);
+            tracing::info!("0G Compute worker spawned as background task");
+        }
+    } else {
+        tracing::warn!("0G Compute worker not started — set ZG_COMPUTE_PROVIDER_URL and ZG_COMPUTE_API_KEY to enable AI analysis");
+    }
+
     // Spawn background workers
     match valkey_connect().await {
         Ok(valkey_client) => {
@@ -88,7 +123,26 @@ async fn main() {
                 .await
                 .expect("Failed to create migration queue connection");
             let repo = MomentsRepository::new(&db);
-            let worker = MigrationWorker::new(migration_queue, repo, shutdown_rx.clone());
+            let migration_onchain_service = if kult_browser_backend_rust::config::CONFIG
+                .onchain
+                .can_submit_transactions()
+            {
+                Some(
+                    kult_browser_backend_rust::onchain::OnchainActivityService::new(
+                        OnchainActivityRepository::new(&db),
+                    ),
+                )
+            } else {
+                None
+            };
+            let migration_da_repo = MomentDAEventRepository::new(&db);
+            let worker = MigrationWorker::new(
+                migration_queue,
+                repo,
+                migration_onchain_service,
+                shutdown_rx.clone(),
+            )
+            .with_da_events(migration_da_repo);
 
             let handle = tokio::spawn(async move {
                 worker.run().await;

@@ -7,4 +7,6 @@ pub mod zg;
 
 pub use bright_data::BrightDataPostScraper;
 pub use digital_ocean::spaces;
+pub use zg::compute;
+pub use zg::da;
 pub use zg::storage;
