@@ -1,6 +1,7 @@
 // src/external/0g/storage/upload.rs
 // Upload files to 0G Storage via the 0g-storage-client CLI binary
 
+use std::path::PathBuf;
 use std::process::Command;
 
 use crate::config::CONFIG;
@@ -84,6 +85,53 @@ pub fn upload_file(file_path: &str) -> Result<UploadResult, String> {
     );
 
     Ok(UploadResult { root_hash, tx_hash })
+}
+
+/// Upload JSON metadata to 0G Storage by writing a temporary file and reusing the CLI path.
+pub fn upload_json_value(prefix: &str, value: &serde_json::Value) -> Result<UploadResult, String> {
+    let filename = format!(
+        "{}-{}.json",
+        sanitize_filename_prefix(prefix),
+        nanoid::nanoid!()
+    );
+    let path: PathBuf = std::env::temp_dir().join("moments").join(filename);
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create metadata temp directory: {}", e))?;
+    }
+
+    let bytes = serde_json::to_vec_pretty(value)
+        .map_err(|e| format!("Failed to serialize 0G metadata JSON: {}", e))?;
+    std::fs::write(&path, bytes)
+        .map_err(|e| format!("Failed to write 0G metadata temp file: {}", e))?;
+
+    let result = upload_file(&path.to_string_lossy());
+    if let Err(e) = std::fs::remove_file(&path) {
+        tracing::warn!(path = %path.display(), error = %e, "Failed to remove 0G metadata temp file");
+    }
+
+    result
+}
+
+fn sanitize_filename_prefix(value: &str) -> String {
+    let sanitized: String = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect();
+
+    let trimmed = sanitized.trim_matches('-');
+    if trimmed.is_empty() {
+        "moment-metadata".to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 /// Parse the FATA (fatal) line from logrus output for a clean error message.

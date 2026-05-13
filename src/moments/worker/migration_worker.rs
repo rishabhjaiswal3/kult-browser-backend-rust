@@ -10,7 +10,10 @@ use tokio::time::timeout;
 
 use crate::external::spaces;
 use crate::external::storage;
+use crate::moments::da_events::{MomentDAEventModel, MomentDAEventRepository, EVENT_ASSET_MIGRATED};
+use crate::moments::model::MomentModel;
 use crate::moments::repository::MomentsRepository;
+use crate::onchain::{metadata_hash, ActivityType, OnchainActivityService, RecordActivityInput};
 use crate::redis::ValkyQueue;
 
 /// Job payload pushed by the service, popped by the worker.
@@ -29,6 +32,15 @@ pub struct MigrationJob {
     /// downloading and uploading the same asset again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asset_zg_hash: Option<String>,
+    /// 0G transaction hash for a prior successful asset upload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset_zg_tx_hash: Option<String>,
+    /// 0G root hash for a prior successful metadata upload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata_zg_hash: Option<String>,
+    /// 0G transaction hash for a prior successful metadata upload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata_zg_tx_hash: Option<String>,
     /// Retry attempt number
     pub attempt: u32,
 }
@@ -61,6 +73,8 @@ enum JobProcessingResult {
 pub struct MigrationWorker {
     queue: ValkyQueue,
     repo: MomentsRepository,
+    onchain_activity_service: Option<OnchainActivityService>,
+    da_event_repo: Option<MomentDAEventRepository>,
     max_retries: u32,
     poll_timeout_secs: u32,
     shutdown_rx: watch::Receiver<bool>,
@@ -71,15 +85,23 @@ impl MigrationWorker {
     pub fn new(
         queue: ValkyQueue,
         repo: MomentsRepository,
+        onchain_activity_service: Option<OnchainActivityService>,
         shutdown_rx: watch::Receiver<bool>,
     ) -> Self {
         Self {
             queue,
             repo,
+            onchain_activity_service,
+            da_event_repo: None,
             max_retries: 3,
             poll_timeout_secs: IDLE_POLL_TIMEOUT_SECS,
             shutdown_rx,
         }
+    }
+
+    pub fn with_da_events(mut self, repo: MomentDAEventRepository) -> Self {
+        self.da_event_repo = Some(repo);
+        self
     }
 
     /// Run the worker loop until a shutdown signal is received.
@@ -106,6 +128,8 @@ impl MigrationWorker {
         // Wrap shared state in Arc for spawned tasks
         let queue = Arc::new(self.queue.clone());
         let repo = Arc::new(self.repo.clone());
+        let onchain_activity_service = Arc::new(self.onchain_activity_service.clone());
+        let da_event_repo = Arc::new(self.da_event_repo.clone());
         let max_retries = self.max_retries;
 
         loop {
@@ -137,14 +161,23 @@ impl MigrationWorker {
 
                             let q = queue.clone();
                             let r = repo.clone();
+                            let onchain = onchain_activity_service.clone();
+                            let da_repo = da_event_repo.clone();
                             tokio::spawn(async move {
-                                match Self::process_job_static(&r, job).await {
+                                match Self::process_job_static(&r, onchain.as_ref().as_ref(), da_repo.as_ref().as_ref(), job).await {
                                     JobProcessingResult::Complete => {
                                         if let Err(e) = q.ack_async(&raw_data).await {
                                             tracing::error!(error = %e, "Failed to ACK completed job");
                                         }
                                     }
                                     JobProcessingResult::Failed { job, reason } => {
+                                        if let Err(e) = r.mark_zg_failed(&job.asset_id, &reason).await {
+                                            tracing::warn!(
+                                                asset_id = %job.asset_id,
+                                                error = %e,
+                                                "Failed to mark 0G migration failure on moment"
+                                            );
+                                        }
                                         tracing::error!(
                                             asset_id = %job.asset_id,
                                             attempt = job.attempt,
@@ -224,9 +257,11 @@ impl MigrationWorker {
     /// Process a single migration job (static version for spawned tasks).
     async fn process_job_static(
         repo: &MomentsRepository,
+        onchain_activity_service: Option<&OnchainActivityService>,
+        da_event_repo: Option<&MomentDAEventRepository>,
         job: MigrationJob,
     ) -> JobProcessingResult {
-        let root_hash = match job
+        let (root_hash, asset_tx_hash) = match job
             .asset_zg_hash
             .as_deref()
             .map(str::trim)
@@ -238,7 +273,7 @@ impl MigrationWorker {
                     root_hash = %root_hash,
                     "Retrying migration with existing 0G hash"
                 );
-                root_hash.to_string()
+                (root_hash.to_string(), job.asset_zg_tx_hash.clone())
             }
             None => {
                 // Step 1: Download from DO Spaces
@@ -281,12 +316,87 @@ impl MigrationWorker {
                 };
 
                 spaces::cleanup(&download.local_path);
-                upload_result.root_hash
+                (upload_result.root_hash, upload_result.tx_hash)
+            }
+        };
+
+        let moment = match repo.find_by_moment_id(&job.asset_id).await {
+            Ok(Some(moment)) => moment,
+            Ok(None) => {
+                return JobProcessingResult::Failed {
+                    job: MigrationJob {
+                        asset_zg_hash: Some(root_hash),
+                        asset_zg_tx_hash: asset_tx_hash,
+                        ..job
+                    },
+                    reason: "Moment not found in database while building 0G metadata".to_string(),
+                };
+            }
+            Err(e) => {
+                return JobProcessingResult::Failed {
+                    job: MigrationJob {
+                        asset_zg_hash: Some(root_hash),
+                        asset_zg_tx_hash: asset_tx_hash,
+                        ..job
+                    },
+                    reason: format!("Failed to load moment for 0G metadata: {}", e),
+                };
+            }
+        };
+
+        let (metadata_hash_value, metadata_tx_hash) = match job
+            .metadata_zg_hash
+            .as_deref()
+            .map(str::trim)
+            .filter(|hash| !hash.is_empty())
+        {
+            Some(metadata_zg_hash) => {
+                tracing::info!(
+                    asset_id = %job.asset_id,
+                    metadata_zg_hash = %metadata_zg_hash,
+                    "Retrying migration with existing 0G metadata hash"
+                );
+                (
+                    metadata_zg_hash.to_string(),
+                    job.metadata_zg_tx_hash.clone(),
+                )
+            }
+            None => {
+                let metadata = build_zg_metadata(&moment, &root_hash, asset_tx_hash.as_deref());
+                match storage::upload_json_value(&format!("{}-metadata", job.asset_id), &metadata) {
+                    Ok(result) => {
+                        tracing::info!(
+                            asset_id = %job.asset_id,
+                            metadata_zg_hash = %result.root_hash,
+                            "Uploaded moment metadata to 0G storage"
+                        );
+                        (result.root_hash, result.tx_hash)
+                    }
+                    Err(e) => {
+                        return JobProcessingResult::Failed {
+                            job: MigrationJob {
+                                asset_zg_hash: Some(root_hash),
+                                asset_zg_tx_hash: asset_tx_hash,
+                                ..job
+                            },
+                            reason: format!("Failed to upload metadata to 0G storage: {}", e),
+                        };
+                    }
+                }
             }
         };
 
         // Step 3: Update MongoDB with 0G hash
-        match repo.update_zg_hash(&job.asset_id, &root_hash).await {
+        match repo
+            .update_zg_storage_details(
+                &job.asset_id,
+                &root_hash,
+                asset_tx_hash.as_deref(),
+                &metadata_hash_value,
+                metadata_tx_hash.as_deref(),
+            )
+            .await
+        {
             Ok(true) => {
                 tracing::info!(
                     asset_id = %job.asset_id,
@@ -297,11 +407,48 @@ impl MigrationWorker {
                     asset_id = %job.asset_id,
                     "Migration complete"
                 );
+                if let Some(onchain_service) = onchain_activity_service {
+                    enqueue_asset_migrated_activity(
+                        onchain_service,
+                        &moment,
+                        &root_hash,
+                        asset_tx_hash.as_deref(),
+                        &metadata_hash_value,
+                        metadata_tx_hash.as_deref(),
+                    )
+                    .await;
+                }
+
+                // Record the migration on 0G DA — proves asset is permanently stored
+                if let Some(da_repo) = da_event_repo {
+                    let event = MomentDAEventModel::new(
+                        &moment.moment_id,
+                        EVENT_ASSET_MIGRATED,
+                        &moment.player_wallet_address,
+                        serde_json::json!({
+                            "assetZgHash": &root_hash,
+                            "assetZgTxHash": asset_tx_hash.as_deref(),
+                            "metadataZgHash": &metadata_hash_value,
+                            "metadataZgTxHash": metadata_tx_hash.as_deref(),
+                        }),
+                    );
+                    if let Err(e) = da_repo.create(event).await {
+                        tracing::warn!(
+                            moment_id = %moment.moment_id,
+                            error = %e,
+                            "Failed to enqueue asset_migrated DA event"
+                        );
+                    }
+                }
+
                 JobProcessingResult::Complete
             }
             Ok(false) => JobProcessingResult::Failed {
                 job: MigrationJob {
                     asset_zg_hash: Some(root_hash),
+                    asset_zg_tx_hash: asset_tx_hash,
+                    metadata_zg_hash: Some(metadata_hash_value),
+                    metadata_zg_tx_hash: metadata_tx_hash,
                     ..job
                 },
                 reason: "Moment not found in database while saving 0G hash".to_string(),
@@ -309,6 +456,9 @@ impl MigrationWorker {
             Err(e) => JobProcessingResult::Failed {
                 job: MigrationJob {
                     asset_zg_hash: Some(root_hash),
+                    asset_zg_tx_hash: asset_tx_hash,
+                    metadata_zg_hash: Some(metadata_hash_value),
+                    metadata_zg_tx_hash: metadata_tx_hash,
                     ..job
                 },
                 reason: format!("Failed to update database with 0G hash: {}", e),
@@ -355,6 +505,62 @@ impl MigrationWorker {
     }
 }
 
+fn build_zg_metadata(
+    moment: &MomentModel,
+    asset_zg_hash: &str,
+    asset_zg_tx_hash: Option<&str>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "schema": "kult.moment.v1",
+        "momentId": &moment.moment_id,
+        "title": &moment.title,
+        "description": &moment.description,
+        "tags": &moment.tags,
+        "relatedGames": &moment.related_games,
+        "creatorWallet": &moment.player_wallet_address,
+        "assetUrl": &moment.asset_url,
+        "assetZgHash": asset_zg_hash,
+        "assetZgTxHash": asset_zg_tx_hash,
+        "assetMetadata": moment.asset_metadata.as_ref().and_then(|doc| serde_json::to_value(doc).ok()),
+        "socialMediaLinks": moment.social_media_links.as_ref().and_then(|doc| serde_json::to_value(doc).ok()),
+        "createdAt": moment.created_at.and_then(|dt| dt.try_to_rfc3339_string().ok()),
+        "updatedAt": moment.updated_at.and_then(|dt| dt.try_to_rfc3339_string().ok()),
+    })
+}
+
+async fn enqueue_asset_migrated_activity(
+    onchain_service: &OnchainActivityService,
+    moment: &MomentModel,
+    asset_zg_hash: &str,
+    asset_zg_tx_hash: Option<&str>,
+    metadata_zg_hash: &str,
+    metadata_zg_tx_hash: Option<&str>,
+) {
+    let metadata = serde_json::json!({
+        "assetZgHash": asset_zg_hash,
+        "assetZgTxHash": asset_zg_tx_hash,
+        "metadataZgHash": metadata_zg_hash,
+        "metadataZgTxHash": metadata_zg_tx_hash,
+    });
+
+    if let Err(e) = onchain_service
+        .enqueue_activity(RecordActivityInput {
+            user_wallet: moment.player_wallet_address.clone(),
+            activity_type: ActivityType::AssetMigratedTo0g,
+            moment_id: moment.moment_id.clone(),
+            entity_id: metadata_zg_hash.to_string(),
+            metadata_hash: metadata_hash(&metadata),
+        })
+        .await
+    {
+        tracing::warn!(
+            moment_id = %moment.moment_id,
+            error = %e,
+            "Failed to enqueue 0G asset migration on-chain activity"
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::MigrationJob;
@@ -381,12 +587,18 @@ mod tests {
             asset_id: "moment-1".to_string(),
             asset_type: "image/jpeg".to_string(),
             asset_zg_hash: Some("0xroot".to_string()),
+            asset_zg_tx_hash: Some("0xtx".to_string()),
+            metadata_zg_hash: Some("0xmetadata".to_string()),
+            metadata_zg_tx_hash: Some("0xmetatx".to_string()),
             attempt: 2,
         };
 
         let value = serde_json::to_value(job).expect("serializable job");
 
         assert_eq!(value["assetZgHash"], "0xroot");
+        assert_eq!(value["assetZgTxHash"], "0xtx");
+        assert_eq!(value["metadataZgHash"], "0xmetadata");
+        assert_eq!(value["metadataZgTxHash"], "0xmetatx");
         assert_eq!(value["attempt"], 2);
     }
 
@@ -397,11 +609,17 @@ mod tests {
             asset_id: "moment-1".to_string(),
             asset_type: "image/jpeg".to_string(),
             asset_zg_hash: None,
+            asset_zg_tx_hash: None,
+            metadata_zg_hash: None,
+            metadata_zg_tx_hash: None,
             attempt: 1,
         };
 
         let value = serde_json::to_value(job).expect("serializable job");
 
         assert!(value.get("assetZgHash").is_none());
+        assert!(value.get("assetZgTxHash").is_none());
+        assert!(value.get("metadataZgHash").is_none());
+        assert!(value.get("metadataZgTxHash").is_none());
     }
 }

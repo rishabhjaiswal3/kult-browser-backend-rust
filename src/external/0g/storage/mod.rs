@@ -1,3 +1,3 @@
 pub mod upload;
 
-pub use upload::{upload_file, UploadResult};
+pub use upload::{upload_file, upload_json_value, UploadResult};

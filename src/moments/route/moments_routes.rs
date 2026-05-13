@@ -9,10 +9,12 @@ use mongodb::Database;
 use crate::game::repository::GameModelRepository;
 use crate::moments::comments;
 use crate::moments::controller::{
-    create_moment, delete_moment, get_feed, get_moment, get_my_moments, like_moment, update_moment,
-    MomentsState,
+    create_moment, delete_moment, get_da_events, get_feed, get_moment, get_my_moments,
+    get_pipeline, get_proof, get_zg_proof, like_moment, retry_zg_migration, share_moment,
+    update_moment, MomentsState,
 };
 use crate::moments::creators;
+use crate::moments::da_events::MomentDAEventRepository;
 use crate::moments::repository::{MomentLikesRepository, MomentsRepository};
 use crate::moments::service::MomentsService;
 use crate::onchain::{OnchainActivityRepository, OnchainActivityService};
@@ -40,6 +42,8 @@ pub fn routes(db: Database, queue: Option<ValkyQueue>) -> Router {
     let comments_router = comments::route::routes(db.clone());
     let creators_router = creators::route::routes(db.clone());
 
+    let da_event_repo = MomentDAEventRepository::new(&db);
+
     let service = match queue {
         Some(q) => MomentsService::with_queue(
             repo,
@@ -56,7 +60,9 @@ pub fn routes(db: Database, queue: Option<ValkyQueue>) -> Router {
             spaces_service,
             onchain_activity_service,
         ),
-    };
+    }
+    .with_da_events(da_event_repo);
+
     let state = MomentsState { service };
 
     Router::new()
@@ -64,6 +70,12 @@ pub fn routes(db: Database, queue: Option<ValkyQueue>) -> Router {
         .route("/", get(get_feed))
         .route("/my", get(get_my_moments))
         .route("/:moment_id/like", post(like_moment))
+        .route("/:moment_id/share", post(share_moment))
+        .route("/:moment_id/da-events", get(get_da_events))
+        .route("/:moment_id/proof", get(get_proof))
+        .route("/:moment_id/pipeline", get(get_pipeline))
+        .route("/:moment_id/zg-proof", get(get_zg_proof))
+        .route("/:moment_id/zg/retry", post(retry_zg_migration))
         .route(
             "/:moment_id",
             get(get_moment).patch(update_moment).delete(delete_moment),

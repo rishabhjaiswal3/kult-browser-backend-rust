@@ -21,6 +21,7 @@ pub async fn ensure_indexes(db: &Database) {
         ensure_agent_indexes(db),
         ensure_referral_indexes(db),
         ensure_onchain_indexes(db),
+        ensure_nonce_indexes(db),
     );
 
     // Log any failures but don't crash — the app can still work without indexes (just slower)
@@ -34,10 +35,11 @@ pub async fn ensure_indexes(db: &Database) {
         "agent",
         "referral",
         "onchain",
+        "nonce",
     ];
     for (i, result) in [
         results.0, results.1, results.2, results.3, results.4, results.5, results.6, results.7,
-        results.8,
+        results.8, results.9,
     ]
     .into_iter()
     .enumerate()
@@ -253,6 +255,34 @@ async fn ensure_agent_indexes(db: &Database) -> Result<(), mongodb::error::Error
     coll.create_index(
         IndexModel::builder()
             .keys(doc! { "agentWallet": 1 })
+            .options(IndexOptions::builder().unique(true).build())
+            .build(),
+    )
+    .await?;
+
+    Ok(())
+}
+
+async fn ensure_nonce_indexes(db: &Database) -> Result<(), mongodb::error::Error> {
+    let coll = db.collection::<mongodb::bson::Document>(&CONFIG.db.player_nonces_collection);
+
+    // TTL index: nonces auto-expire after 5 minutes (300 seconds)
+    coll.create_index(
+        IndexModel::builder()
+            .keys(doc! { "createdAt": 1 })
+            .options(
+                IndexOptions::builder()
+                    .expire_after(std::time::Duration::from_secs(300))
+                    .build(),
+            )
+            .build(),
+    )
+    .await?;
+
+    // Lookup by wallet + nonce
+    coll.create_index(
+        IndexModel::builder()
+            .keys(doc! { "walletAddress": 1, "nonce": 1 })
             .options(IndexOptions::builder().unique(true).build())
             .build(),
     )

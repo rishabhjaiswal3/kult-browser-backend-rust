@@ -3,9 +3,15 @@
 use crate::external::digital_ocean::spaces::SpacesService;
 use crate::game::repository::GameModelRepository;
 use crate::handler::AppError;
+use crate::moments::da_events::{
+    MomentDAEventModel, MomentDAEventRepository, EVENT_MOMENT_CREATED, EVENT_MOMENT_LIKED,
+    EVENT_MOMENT_SHARED,
+};
 use crate::moments::dto::{
-    CreateMomentRequest, CreateMomentResponse, LikeMomentResponse, MomentListResponse,
-    MomentResponse, UpdateMomentRequest,
+    ComputeProofResponse, CreateMomentRequest, CreateMomentResponse, DaProofResponse,
+    DaPipelineStatus, LikeMomentResponse, MomentListResponse, MomentPipelineResponse,
+    MomentProofResponse, MomentResponse, MomentZgProofResponse, PipelineStageStatus,
+    RetryZgMigrationResponse, ShareMomentResponse, StorageProofResponse, UpdateMomentRequest,
 };
 use crate::moments::model::{MomentLikeModel, MomentModel};
 use crate::moments::repository::{CreateMomentLikeError, MomentLikesRepository, MomentsRepository};
@@ -25,6 +31,7 @@ pub struct MomentsService {
     queue: Option<ValkyQueue>,
     spaces_service: SpacesService,
     onchain_activity_service: Option<OnchainActivityService>,
+    da_event_repo: Option<MomentDAEventRepository>,
 }
 
 impl MomentsService {
@@ -42,6 +49,7 @@ impl MomentsService {
             queue: None,
             spaces_service,
             onchain_activity_service,
+            da_event_repo: None,
         }
     }
 
@@ -61,7 +69,13 @@ impl MomentsService {
             queue: Some(queue),
             spaces_service,
             onchain_activity_service,
+            da_event_repo: None,
         }
+    }
+
+    pub fn with_da_events(mut self, da_event_repo: MomentDAEventRepository) -> Self {
+        self.da_event_repo = Some(da_event_repo);
+        self
     }
 
     /// Create a new moment.
@@ -127,6 +141,17 @@ impl MomentsService {
                 .filter(|u| !u.is_empty())
                 .map(|u| u.to_string()),
             asset_zg_hash: None,
+            metadata_zg_hash: None,
+            zg_status: request
+                .asset_url
+                .as_deref()
+                .map(str::trim)
+                .filter(|u| !u.is_empty())
+                .map(|_| "pending".to_string()),
+            asset_zg_tx_hash: None,
+            metadata_zg_tx_hash: None,
+            zg_error: None,
+            zg_uploaded_at: None,
             num_likes: 0,
             num_comments: 0,
             asset_metadata: request
@@ -148,6 +173,14 @@ impl MomentsService {
             updated_at: None,
             original_filename: None,
             file_size_bytes: None,
+            ai_caption: None,
+            ai_rank_score: None,
+            ai_highlights: vec![],
+            ai_status: None,
+            ai_moment_type: None,
+            ai_skill_score: None,
+            ai_reaction_quality: None,
+            ai_rarity: None,
         };
 
         self.repo.create(moment).await.map_err(|e| {
@@ -176,6 +209,9 @@ impl MomentsService {
                     asset_id: moment_id.clone(),
                     asset_type,
                     asset_zg_hash: None,
+                    asset_zg_tx_hash: None,
+                    metadata_zg_hash: None,
+                    metadata_zg_tx_hash: None,
                     attempt: 1,
                 };
 
@@ -214,6 +250,14 @@ impl MomentsService {
         )
         .await;
 
+        self.enqueue_da_event(
+            &moment_id,
+            EVENT_MOMENT_CREATED,
+            wallet,
+            serde_json::json!({ "title": request.title.trim() }),
+        )
+        .await;
+
         Ok(CreateMomentResponse {
             moment_id,
             message: "Moment created successfully".to_string(),
@@ -235,6 +279,85 @@ impl MomentsService {
             .ok_or_else(|| AppError::NotFound("Moment not found".to_string()))?;
 
         Ok(Self::to_response(moment))
+    }
+
+    /// Get the public 0G proof document for a moment.
+    pub async fn get_zg_proof(&self, moment_id: &str) -> Result<MomentZgProofResponse, AppError> {
+        let moment = self
+            .repo
+            .find_by_moment_id(moment_id)
+            .await
+            .map_err(AppError::Internal)?
+            .ok_or_else(|| AppError::NotFound("Moment not found".to_string()))?;
+
+        Ok(Self::to_zg_proof(moment))
+    }
+
+    /// Requeue a moment for 0G storage migration. Owner-only.
+    pub async fn retry_zg_migration(
+        &self,
+        wallet: &str,
+        moment_id: &str,
+    ) -> Result<RetryZgMigrationResponse, AppError> {
+        let moment = self
+            .repo
+            .find_by_moment_id(moment_id)
+            .await
+            .map_err(AppError::Internal)?
+            .ok_or_else(|| AppError::NotFound("Moment not found".to_string()))?;
+
+        if !moment.player_wallet_address.eq_ignore_ascii_case(wallet) {
+            return Err(AppError::Forbidden(
+                "You can retry migration only for your own moment".to_string(),
+            ));
+        }
+
+        let asset_url = moment
+            .asset_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+            .ok_or_else(|| {
+                AppError::BadRequest("Moment has no asset URL to migrate".to_string())
+            })?;
+
+        let asset_type = moment
+            .asset_metadata
+            .as_ref()
+            .and_then(|doc| doc.get_str("fileType").ok())
+            .unwrap_or("application/octet-stream")
+            .to_string();
+
+        let queue = self.queue.as_ref().ok_or_else(|| {
+            AppError::BadRequest("0G migration queue is not available".to_string())
+        })?;
+
+        let job = MigrationJob {
+            asset_url: asset_url.to_string(),
+            asset_id: moment.moment_id.clone(),
+            asset_type,
+            asset_zg_hash: moment.asset_zg_hash.clone(),
+            asset_zg_tx_hash: moment.asset_zg_tx_hash.clone(),
+            metadata_zg_hash: moment.metadata_zg_hash.clone(),
+            metadata_zg_tx_hash: moment.metadata_zg_tx_hash.clone(),
+            attempt: 1,
+        };
+
+        queue.push_async(&job).await.map_err(|e| {
+            tracing::error!(moment_id = %moment.moment_id, error = %e, "Failed to requeue 0G migration");
+            AppError::Internal(format!("Failed to queue 0G migration retry: {}", e))
+        })?;
+
+        self.repo
+            .mark_zg_pending(&moment.moment_id)
+            .await
+            .map_err(AppError::Internal)?;
+
+        Ok(RetryZgMigrationResponse {
+            moment_id: moment.moment_id,
+            zg_status: "pending".to_string(),
+            message: "0G migration retry queued".to_string(),
+        })
     }
 
     /// Get public feed of moments.
@@ -505,9 +628,15 @@ impl MomentsService {
             ActivityType::MomentLiked,
             &existing.moment_id,
             &format!("{}:{}", existing.moment_id, wallet),
-            &serde_json::json!({
-                "numLikes": updated.num_likes,
-            }),
+            &serde_json::json!({ "numLikes": updated.num_likes }),
+        )
+        .await;
+
+        self.enqueue_da_event(
+            moment_id,
+            EVENT_MOMENT_LIKED,
+            &wallet,
+            serde_json::json!({ "numLikes": updated.num_likes }),
         )
         .await;
 
@@ -518,13 +647,193 @@ impl MomentsService {
         })
     }
 
+    /// Record a share event on 0G DA.
+    pub async fn share_moment(
+        &self,
+        wallet: &str,
+        moment_id: &str,
+    ) -> Result<ShareMomentResponse, AppError> {
+        let _ = self
+            .repo
+            .find_by_moment_id(moment_id)
+            .await
+            .map_err(AppError::Internal)?
+            .ok_or_else(|| AppError::NotFound("Moment not found".to_string()))?;
+
+        self.enqueue_da_event(
+            moment_id,
+            EVENT_MOMENT_SHARED,
+            wallet,
+            serde_json::json!({ "sharedBy": wallet }),
+        )
+        .await;
+
+        Ok(ShareMomentResponse {
+            moment_id: moment_id.to_string(),
+            message: "Share recorded on 0G DA".to_string(),
+        })
+    }
+
+    /// Return DA events for a moment.
+    pub async fn get_da_events(
+        &self,
+        moment_id: &str,
+    ) -> Result<Vec<crate::moments::dto::MomentDAEventResponse>, AppError> {
+        let Some(repo) = &self.da_event_repo else {
+            return Ok(vec![]);
+        };
+
+        let events = repo
+            .find_by_moment_id(moment_id)
+            .await
+            .map_err(AppError::Internal)?;
+
+        Ok(events
+            .into_iter()
+            .map(|e| crate::moments::dto::MomentDAEventResponse {
+                event_type: e.event_type,
+                actor_wallet: e.actor_wallet,
+                da_status: e.da_status,
+                da_request_id: e.da_request_id,
+                da_batch_id: e.da_batch_id,
+                da_blob_index: e.da_blob_index,
+                da_batch_header_hash: e.da_batch_header_hash,
+                da_confirmation_block: e.da_confirmation_block,
+                da_finalized_at: e.da_finalized_at,
+                da_error: e.da_error,
+                created_at: e
+                    .created_at
+                    .and_then(|dt| dt.try_to_rfc3339_string().ok()),
+            })
+            .collect())
+    }
+
+    /// Assemble a full proof bundle for a moment: storage + DA + compute.
+    pub async fn get_proof(&self, moment_id: &str) -> Result<MomentProofResponse, AppError> {
+        let moment = self
+            .repo
+            .find_by_moment_id(moment_id)
+            .await
+            .map_err(AppError::Internal)?
+            .ok_or_else(|| AppError::NotFound("Moment not found".to_string()))?;
+
+        let storage_verified = moment.asset_zg_hash.is_some() && moment.metadata_zg_hash.is_some();
+        let storage = StorageProofResponse {
+            status: moment.zg_status.clone().unwrap_or_else(|| "none".to_string()),
+            asset_hash: moment.asset_zg_hash.clone(),
+            metadata_hash: moment.metadata_zg_hash.clone(),
+            asset_url: moment
+                .asset_zg_hash
+                .as_deref()
+                .and_then(|h| crate::config::CONFIG.zg.gateway_url_for_hash(h)),
+            metadata_url: moment
+                .metadata_zg_hash
+                .as_deref()
+                .and_then(|h| crate::config::CONFIG.zg.gateway_url_for_hash(h)),
+            asset_tx_hash: moment.asset_zg_tx_hash.clone(),
+            metadata_tx_hash: moment.metadata_zg_tx_hash.clone(),
+            uploaded_at: moment
+                .zg_uploaded_at
+                .map(|dt| dt.try_to_rfc3339_string().unwrap_or_default()),
+            verified: storage_verified,
+        };
+
+        let da_events = self.get_da_events(moment_id).await?;
+        let finalized_count = da_events.iter().filter(|e| e.da_status == "finalized").count();
+        let da = DaProofResponse {
+            total_events: da_events.len(),
+            finalized_events: finalized_count,
+            events: da_events,
+        };
+
+        let compute = ComputeProofResponse {
+            status: moment.ai_status.clone().unwrap_or_else(|| "none".to_string()),
+            caption: moment.ai_caption.clone(),
+            rank_score: moment.ai_rank_score,
+            moment_type: moment.ai_moment_type.clone(),
+            skill_score: moment.ai_skill_score,
+            rarity: moment.ai_rarity.clone(),
+        };
+
+        Ok(MomentProofResponse {
+            moment_id: moment_id.to_string(),
+            storage,
+            da,
+            compute,
+        })
+    }
+
+    /// Per-layer pipeline status for a moment.
+    pub async fn get_pipeline(&self, moment_id: &str) -> Result<MomentPipelineResponse, AppError> {
+        let moment = self
+            .repo
+            .find_by_moment_id(moment_id)
+            .await
+            .map_err(AppError::Internal)?
+            .ok_or_else(|| AppError::NotFound("Moment not found".to_string()))?;
+
+        let storage = PipelineStageStatus {
+            status: moment.zg_status.clone().unwrap_or_else(|| "none".to_string()),
+            detail: moment.zg_error.clone(),
+        };
+
+        let da_events = self.get_da_events(moment_id).await?;
+        let total = da_events.len();
+        let finalized = da_events.iter().filter(|e| e.da_status == "finalized").count();
+        let dispersing = da_events.iter().filter(|e| e.da_status == "dispersing").count();
+        let pending = da_events.iter().filter(|e| e.da_status == "pending").count();
+        let failed = da_events.iter().filter(|e| e.da_status == "failed").count();
+        let da = DaPipelineStatus { total, finalized, dispersing, pending, failed };
+
+        let compute = PipelineStageStatus {
+            status: moment.ai_status.clone().unwrap_or_else(|| "none".to_string()),
+            detail: None,
+        };
+
+        Ok(MomentPipelineResponse {
+            moment_id: moment_id.to_string(),
+            storage,
+            da,
+            compute,
+        })
+    }
+
     /// Convert MomentModel to MomentResponse.
     fn to_response(moment: MomentModel) -> MomentResponse {
+        let asset_zg_url = moment
+            .asset_zg_hash
+            .as_deref()
+            .and_then(|hash| crate::config::CONFIG.zg.gateway_url_for_hash(hash));
+        let metadata_zg_url = moment
+            .metadata_zg_hash
+            .as_deref()
+            .and_then(|hash| crate::config::CONFIG.zg.gateway_url_for_hash(hash));
+        let asset_zg_tx_url = moment
+            .asset_zg_tx_hash
+            .as_deref()
+            .and_then(|hash| crate::config::CONFIG.zg.explorer_url_for_tx(hash));
+        let metadata_zg_tx_url = moment
+            .metadata_zg_tx_hash
+            .as_deref()
+            .and_then(|hash| crate::config::CONFIG.zg.explorer_url_for_tx(hash));
+
         MomentResponse {
             moment_id: moment.moment_id,
             player_wallet_address: moment.player_wallet_address,
             asset_url: moment.asset_url,
             asset_zg_hash: moment.asset_zg_hash,
+            metadata_zg_hash: moment.metadata_zg_hash,
+            zg_status: moment.zg_status,
+            asset_zg_tx_hash: moment.asset_zg_tx_hash,
+            metadata_zg_tx_hash: moment.metadata_zg_tx_hash,
+            asset_zg_url,
+            metadata_zg_url,
+            asset_zg_tx_url,
+            metadata_zg_tx_url,
+            zg_error: moment.zg_error,
+            zg_uploaded_at: moment
+                .zg_uploaded_at
+                .map(|dt| dt.try_to_rfc3339_string().unwrap_or_default()),
             num_likes: moment.num_likes,
             num_comments: moment.num_comments,
             asset_metadata: moment
@@ -547,6 +856,32 @@ impl MomentsService {
                 .unwrap_or_default(),
             original_filename: moment.original_filename,
             file_size_bytes: moment.file_size_bytes,
+            ai_caption: moment.ai_caption,
+            ai_rank_score: moment.ai_rank_score,
+            ai_highlights: moment.ai_highlights,
+            ai_status: moment.ai_status,
+            ai_moment_type: moment.ai_moment_type,
+            ai_skill_score: moment.ai_skill_score,
+            ai_reaction_quality: moment.ai_reaction_quality,
+            ai_rarity: moment.ai_rarity,
+        }
+    }
+
+    fn to_zg_proof(moment: MomentModel) -> MomentZgProofResponse {
+        let response = Self::to_response(moment);
+        MomentZgProofResponse {
+            moment_id: response.moment_id,
+            zg_status: response.zg_status,
+            asset_zg_hash: response.asset_zg_hash,
+            metadata_zg_hash: response.metadata_zg_hash,
+            asset_zg_tx_hash: response.asset_zg_tx_hash,
+            metadata_zg_tx_hash: response.metadata_zg_tx_hash,
+            asset_zg_url: response.asset_zg_url,
+            metadata_zg_url: response.metadata_zg_url,
+            asset_zg_tx_url: response.asset_zg_tx_url,
+            metadata_zg_tx_url: response.metadata_zg_tx_url,
+            zg_uploaded_at: response.zg_uploaded_at,
+            zg_error: response.zg_error,
         }
     }
 
@@ -629,6 +964,28 @@ impl MomentsService {
                 error = %e,
                 moment_id = %moment_id,
                 "Failed to enqueue onchain activity"
+            );
+        }
+    }
+
+    async fn enqueue_da_event(
+        &self,
+        moment_id: &str,
+        event_type: &str,
+        actor_wallet: &str,
+        event_data: serde_json::Value,
+    ) {
+        let Some(repo) = &self.da_event_repo else {
+            return;
+        };
+
+        let event = MomentDAEventModel::new(moment_id, event_type, actor_wallet, event_data);
+        if let Err(e) = repo.create(event).await {
+            tracing::error!(
+                error = %e,
+                moment_id = %moment_id,
+                event_type = %event_type,
+                "Failed to create DA event"
             );
         }
     }

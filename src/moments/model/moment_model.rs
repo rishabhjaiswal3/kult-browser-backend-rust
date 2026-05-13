@@ -44,6 +44,30 @@ pub struct MomentModel {
     #[serde(rename = "assetZgHash", default)]
     pub asset_zg_hash: Option<String>,
 
+    /// ZG hash of the immutable moment metadata JSON
+    #[serde(rename = "metadataZgHash", default)]
+    pub metadata_zg_hash: Option<String>,
+
+    /// Latest 0G storage status for this moment
+    #[serde(rename = "zgStatus", default)]
+    pub zg_status: Option<String>,
+
+    /// 0G transaction hash for the asset upload
+    #[serde(rename = "assetZgTxHash", default)]
+    pub asset_zg_tx_hash: Option<String>,
+
+    /// 0G transaction hash for the metadata upload
+    #[serde(rename = "metadataZgTxHash", default)]
+    pub metadata_zg_tx_hash: Option<String>,
+
+    /// Last 0G error, if migration failed
+    #[serde(rename = "zgError", default)]
+    pub zg_error: Option<String>,
+
+    /// Timestamp when the moment completed 0G storage
+    #[serde(rename = "zgUploadedAt", default)]
+    pub zg_uploaded_at: Option<mongodb::bson::DateTime>,
+
     /// Total likes on the moment
     #[serde(rename = "numLikes", default)]
     pub num_likes: u64,
@@ -74,6 +98,37 @@ pub struct MomentModel {
     /// Social media links (twitter, instagram, etc.)
     #[serde(rename = "socialMediaLinks", default)]
     pub social_media_links: Option<mongodb::bson::Document>,
+
+    // === 0G Compute AI Analysis ===
+    #[serde(rename = "aiCaption", default)]
+    pub ai_caption: Option<String>,
+
+    #[serde(rename = "aiRankScore", default)]
+    pub ai_rank_score: Option<u32>,
+
+    #[serde(rename = "aiHighlights", default)]
+    pub ai_highlights: Vec<String>,
+
+    /// "pending" | "processed" | "failed" | "unavailable"
+    #[serde(rename = "aiStatus", default)]
+    pub ai_status: Option<String>,
+
+    // === 0G Compute Gameplay Intelligence ===
+    /// Gameplay classification: "clutch" | "speedrun" | "strategy" | "ai_duel" | "domination" | "highlight"
+    #[serde(rename = "aiMomentType", default)]
+    pub ai_moment_type: Option<String>,
+
+    /// Skill score 0-100 (reaction speed, precision, decision quality)
+    #[serde(rename = "aiSkillScore", default)]
+    pub ai_skill_score: Option<u32>,
+
+    /// Reaction quality: "low" | "medium" | "high" | "exceptional"
+    #[serde(rename = "aiReactionQuality", default)]
+    pub ai_reaction_quality: Option<String>,
+
+    /// Rarity tier: "common" | "rare" | "epic" | "legendary"
+    #[serde(rename = "aiRarity", default)]
+    pub ai_rarity: Option<String>,
 
     /// Timestamps
     #[serde(rename = "createdAt", default)]
