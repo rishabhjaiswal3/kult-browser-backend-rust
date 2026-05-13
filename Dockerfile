@@ -35,7 +35,6 @@ RUN apt-get update \
 COPY Cargo.toml Cargo.lock ./
 COPY Procfile ./Procfile
 COPY src ./src
-COPY bin ./bin
 
 RUN cargo build --release --locked --bin kult_browser_backend_rust
 
