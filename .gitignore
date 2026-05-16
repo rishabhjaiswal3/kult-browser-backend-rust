@@ -42,6 +42,7 @@ update_zero_dash.py
 update_zero_g_pool.py
 insert_vector_facts.py
 check_count.py
+
 check_facts.py
 check_counts.py
 check_ratings.py
