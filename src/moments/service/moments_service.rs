@@ -8,8 +8,8 @@ use crate::moments::da_events::{
     EVENT_MOMENT_SHARED,
 };
 use crate::moments::dto::{
-    ComputeProofResponse, CreateMomentRequest, CreateMomentResponse, DaProofResponse,
-    DaPipelineStatus, LikeMomentResponse, MomentListResponse, MomentPipelineResponse,
+    ComputeProofResponse, CreateMomentRequest, CreateMomentResponse, DaPipelineStatus,
+    DaProofResponse, LikeMomentResponse, MomentListResponse, MomentPipelineResponse,
     MomentProofResponse, MomentResponse, MomentZgProofResponse, PipelineStageStatus,
     RetryZgMigrationResponse, ShareMomentResponse, StorageProofResponse, UpdateMomentRequest,
 };
@@ -701,9 +701,7 @@ impl MomentsService {
                 da_confirmation_block: e.da_confirmation_block,
                 da_finalized_at: e.da_finalized_at,
                 da_error: e.da_error,
-                created_at: e
-                    .created_at
-                    .and_then(|dt| dt.try_to_rfc3339_string().ok()),
+                created_at: e.created_at.and_then(|dt| dt.try_to_rfc3339_string().ok()),
             })
             .collect())
     }
@@ -719,7 +717,10 @@ impl MomentsService {
 
         let storage_verified = moment.asset_zg_hash.is_some() && moment.metadata_zg_hash.is_some();
         let storage = StorageProofResponse {
-            status: moment.zg_status.clone().unwrap_or_else(|| "none".to_string()),
+            status: moment
+                .zg_status
+                .clone()
+                .unwrap_or_else(|| "none".to_string()),
             asset_hash: moment.asset_zg_hash.clone(),
             metadata_hash: moment.metadata_zg_hash.clone(),
             asset_url: moment
@@ -739,7 +740,10 @@ impl MomentsService {
         };
 
         let da_events = self.get_da_events(moment_id).await?;
-        let finalized_count = da_events.iter().filter(|e| e.da_status == "finalized").count();
+        let finalized_count = da_events
+            .iter()
+            .filter(|e| e.da_status == "finalized")
+            .count();
         let da = DaProofResponse {
             total_events: da_events.len(),
             finalized_events: finalized_count,
@@ -747,7 +751,10 @@ impl MomentsService {
         };
 
         let compute = ComputeProofResponse {
-            status: moment.ai_status.clone().unwrap_or_else(|| "none".to_string()),
+            status: moment
+                .ai_status
+                .clone()
+                .unwrap_or_else(|| "none".to_string()),
             caption: moment.ai_caption.clone(),
             rank_score: moment.ai_rank_score,
             moment_type: moment.ai_moment_type.clone(),
@@ -773,20 +780,41 @@ impl MomentsService {
             .ok_or_else(|| AppError::NotFound("Moment not found".to_string()))?;
 
         let storage = PipelineStageStatus {
-            status: moment.zg_status.clone().unwrap_or_else(|| "none".to_string()),
+            status: moment
+                .zg_status
+                .clone()
+                .unwrap_or_else(|| "none".to_string()),
             detail: moment.zg_error.clone(),
         };
 
         let da_events = self.get_da_events(moment_id).await?;
         let total = da_events.len();
-        let finalized = da_events.iter().filter(|e| e.da_status == "finalized").count();
-        let dispersing = da_events.iter().filter(|e| e.da_status == "dispersing").count();
-        let pending = da_events.iter().filter(|e| e.da_status == "pending").count();
+        let finalized = da_events
+            .iter()
+            .filter(|e| e.da_status == "finalized")
+            .count();
+        let dispersing = da_events
+            .iter()
+            .filter(|e| e.da_status == "dispersing")
+            .count();
+        let pending = da_events
+            .iter()
+            .filter(|e| e.da_status == "pending")
+            .count();
         let failed = da_events.iter().filter(|e| e.da_status == "failed").count();
-        let da = DaPipelineStatus { total, finalized, dispersing, pending, failed };
+        let da = DaPipelineStatus {
+            total,
+            finalized,
+            dispersing,
+            pending,
+            failed,
+        };
 
         let compute = PipelineStageStatus {
-            status: moment.ai_status.clone().unwrap_or_else(|| "none".to_string()),
+            status: moment
+                .ai_status
+                .clone()
+                .unwrap_or_else(|| "none".to_string()),
             detail: None,
         };
 

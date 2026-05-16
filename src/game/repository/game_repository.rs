@@ -2,7 +2,7 @@ use chrono::Utc;
 use futures::TryStreamExt;
 use mongodb::{
     bson::{doc, Document},
-    options::FindOneAndUpdateOptions,
+    options::{FindOneAndUpdateOptions, FindOptions},
     Collection, Database,
 };
 use std::collections::HashSet;
@@ -24,10 +24,43 @@ impl GameModelRepository {
         }
     }
 
-    pub async fn get_play_count(&self, db_name: &str, collection_name: &str) -> Result<u64, mongodb::error::Error> {
+    pub async fn get_play_count(
+        &self,
+        db_name: &str,
+        collection_name: &str,
+    ) -> Result<u64, mongodb::error::Error> {
         let target_db = self.db.client().database(db_name);
         let coll = target_db.collection::<Document>(collection_name);
-        coll.estimated_document_count().await
+        coll.count_documents(doc! {}).await
+    }
+
+    pub async fn get_vector_facts(
+        &self,
+        game_id: &str,
+        limit: i64,
+    ) -> Result<Vec<String>, mongodb::error::Error> {
+        let collection = self.db.collection::<Document>("vector_facts");
+        let filter = doc! {
+            "metadata.game_id": game_id,
+            "metadata.category": "developer_knowledge",
+        };
+        let options = FindOptions::builder()
+            .sort(doc! { "_id": 1 })
+            .limit(limit)
+            .build();
+        let mut cursor = collection.find(filter).with_options(options).await?;
+        let mut facts = Vec::new();
+
+        while let Some(document) = cursor.try_next().await? {
+            if let Ok(text) = document.get_str("text") {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    facts.push(trimmed.to_string());
+                }
+            }
+        }
+
+        Ok(facts)
     }
 
     // Find a GameModel by its unique slug

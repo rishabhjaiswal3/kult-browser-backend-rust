@@ -71,10 +71,7 @@ async fn update_listing(
     }
 }
 
-async fn delist_listing(
-    State(state): State<AdminState>,
-    Path(id): Path<String>,
-) -> Response {
+async fn delist_listing(State(state): State<AdminState>, Path(id): Path<String>) -> Response {
     match state.listing_service.delist(&id).await {
         Ok(data) => ApiResponse::success(data).into_response(),
         Err(e) => e.into_response(),

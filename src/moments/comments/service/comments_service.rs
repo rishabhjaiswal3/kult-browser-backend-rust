@@ -6,7 +6,9 @@ use crate::moments::comments::dto::{
 };
 use crate::moments::comments::model::CommentModel;
 use crate::moments::comments::repository::CommentsRepository;
-use crate::moments::da_events::{MomentDAEventModel, MomentDAEventRepository, EVENT_COMMENT_CREATED, EVENT_MOMENT_COMMENTED};
+use crate::moments::da_events::{
+    MomentDAEventModel, MomentDAEventRepository, EVENT_COMMENT_CREATED, EVENT_MOMENT_COMMENTED,
+};
 use crate::moments::repository::MomentsRepository;
 use crate::onchain::{metadata_hash, ActivityType, OnchainActivityService, RecordActivityInput};
 

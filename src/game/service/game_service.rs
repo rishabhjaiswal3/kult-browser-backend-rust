@@ -47,24 +47,23 @@ impl GameService {
         let mut game_dtos: Vec<GameListItemDto> = Vec::new();
         for game in games {
             let mut dto = Self::to_list_item(game);
-            
-            let coll_info = match dto.identification.as_str() {
-                "guesstheai" => Some(("guesstheai", "guesstheai_users")),
-                "highwayhustle" => Some(("highwayhustle", "highwayhustleplayers")),
-                "robowars" => Some(("RoboWar", "RoboWar")),
-                "warzonewarriors" | "warzone" => Some(("new-warzone", "warzoneplayerprofiles")),
-                "zerodash" => Some(("zerodash", "players")),
-                "zerogpool" => Some(("zerogpool", "userdatas")),
-                _ => None,
-            };
-            
-            if let Some((db_n, coll_n)) = coll_info {
-                if let Ok(count) = self.repo.get_play_count(db_n, coll_n).await {
-                    dto.play_count = Some(count);
-                }
+            if let Some(count) = self.play_count_for_game(&dto.identification).await {
+                dto.play_count = Some(count);
+                // Dynamically update rating based on play count if not already set or for consistency
+                dto.rating = Some(Self::calculate_dynamic_rating(count));
+            }
+            if let Some(facts) = self.knowledge_facts_for_game(&dto.identification).await {
+                dto.knowledge_facts = Some(facts);
             }
             game_dtos.push(dto);
         }
+
+        // Sort by play count descending so the most "famous" games are at the top
+        game_dtos.sort_by(|a, b| {
+            b.play_count
+                .unwrap_or(0)
+                .cmp(&a.play_count.unwrap_or(0))
+        });
 
         let total_pages = if total_count == 0 {
             0
@@ -103,26 +102,16 @@ impl GameService {
 
         tracing::debug!(identification = %identification, "Game found");
         let mut dto = Self::to_detail(game);
-        
-        let coll_info = match dto.identification.as_str() {
-            "guesstheai" => Some(("guesstheai", "guesstheai_users")),
-            "highwayhustle" => Some(("highwayhustle", "highwayhustleplayers")),
-            "robowars" => Some(("RoboWar", "RoboWar")),
-            "warzonewarriors" | "warzone" => Some(("new-warzone", "warzoneplayerprofiles")),
-            "zerodash" => Some(("zerodash", "players")),
-            "zerogpool" => Some(("zerogpool", "userdatas")),
-            _ => None,
-        };
-        
-        if let Some((db_n, coll_n)) = coll_info {
-            if let Ok(count) = self.repo.get_play_count(db_n, coll_n).await {
-                dto.play_count = Some(count);
-            }
+
+        if let Some(count) = self.play_count_for_game(&dto.identification).await {
+            dto.play_count = Some(count);
+            dto.rating = Some(Self::calculate_dynamic_rating(count));
         }
-        
-        Ok(GameDetailResponse {
-            game: dto,
-        })
+        if let Some(facts) = self.knowledge_facts_for_game(&dto.identification).await {
+            dto.knowledge_facts = Some(facts);
+        }
+
+        Ok(GameDetailResponse { game: dto })
     }
 
     /// Get all unique categories.
@@ -149,6 +138,7 @@ impl GameService {
             thumbnail: game.images.hero,
             is_downloadable: game.is_downloadable,
             metadata: game.metadata,
+            knowledge_facts: None,
         }
     }
 
@@ -164,6 +154,104 @@ impl GameService {
             thumbnail: game.images.hero,
             is_downloadable: game.is_downloadable,
             metadata: game.metadata,
+            knowledge_facts: None,
+        }
+    }
+
+    async fn knowledge_facts_for_game(&self, identification: &str) -> Option<Vec<String>> {
+        let game_id = Self::vector_fact_game_id(identification);
+        let facts = self.repo.get_vector_facts(game_id, 8).await.map_err(|error| {
+            tracing::warn!(
+                error = %error,
+                identification,
+                game_id,
+                "Failed to fetch game vector facts"
+            );
+            error
+        }).ok()?;
+
+        if facts.is_empty() {
+            None
+        } else {
+            Some(facts)
+        }
+    }
+
+    async fn play_count_for_game(&self, identification: &str) -> Option<u64> {
+        let sources = Self::play_count_sources(identification);
+        if sources.is_empty() {
+            return None;
+        }
+
+        let mut best_count: Option<u64> = None;
+        for (db_name, collection_name) in sources {
+            match self.repo.get_play_count(db_name, collection_name).await {
+                Ok(count) => {
+                    best_count = Some(best_count.map_or(count, |current| current.max(count)));
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        error = %error,
+                        identification,
+                        db_name,
+                        collection_name,
+                        "Failed to fetch game play count"
+                    );
+                }
+            }
+        }
+
+        best_count
+    }
+
+    fn play_count_sources(identification: &str) -> &'static [(&'static str, &'static str)] {
+        match identification {
+            "guesstheai" => &[("guesstheai", "guesstheai_users")],
+            "highwayhustle" | "highway-hustle" => &[("highwayhustle", "highwayhustleplayers")],
+            "robowars" | "robo-wars" => &[("RoboWar", "RoboWar")],
+            "warzonewarriors" | "warzone" | "new-warzone" | "new warzone" | "warzone-warriors" => {
+                &[
+                    ("new-warzone", "warzoneplayerprofiles"),
+                    ("kult_browser", "new warzone"),
+                ]
+            }
+            "zerodash" | "zero-dash" => &[("zerodash", "players")],
+            "zerogpool" | "zerog-pool" | "zero-g-pool" => &[("zerogpool", "userdatas")],
+            _ => &[],
+        }
+    }
+
+    fn vector_fact_game_id<'a>(identification: &'a str) -> &'a str {
+        match identification {
+            "highway-hustle" => "highwayhustle",
+            "robo-wars" => "robowars",
+            "warzone" | "new-warzone" | "new warzone" | "warzone-warriors" => "warzonewarriors",
+            "zero-dash" => "zerodash",
+            "zerog-pool" | "zero-g-pool" => "zerogpool",
+            value => match value {
+                "guesstheai" | "highwayhustle" | "robowars" | "warzonewarriors" | "zerodash"
+                | "zerogpool" => value,
+                _ => identification,
+            },
+        }
+    }
+
+    /// Maps play counts to a rating from 4.0 to 5.0 for AI ranking signals.
+    fn calculate_dynamic_rating(play_count: u64) -> f64 {
+        if play_count >= 100_000 {
+            5.0
+        } else if play_count >= 50_000 {
+            4.9
+        } else if play_count >= 10_000 {
+            4.8
+        } else if play_count >= 5_000 {
+            4.7
+        } else if play_count >= 1_000 {
+            4.5
+        } else if play_count >= 100 {
+            4.2
+        } else {
+            4.0
         }
     }
 }

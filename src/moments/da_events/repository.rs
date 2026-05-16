@@ -5,7 +5,10 @@ use mongodb::bson::{doc, oid::ObjectId, DateTime, Document};
 use mongodb::{Collection, Database};
 
 use crate::external::da::DaReceipt;
-use crate::moments::da_events::model::{MomentDAEventModel, DA_STATUS_DISPERSING, DA_STATUS_FAILED, DA_STATUS_FINALIZED, DA_STATUS_PENDING};
+use crate::moments::da_events::model::{
+    MomentDAEventModel, DA_STATUS_DISPERSING, DA_STATUS_FAILED, DA_STATUS_FINALIZED,
+    DA_STATUS_PENDING,
+};
 
 #[derive(Clone)]
 pub struct MomentDAEventRepository {

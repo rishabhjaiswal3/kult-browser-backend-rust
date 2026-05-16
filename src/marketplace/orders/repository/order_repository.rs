@@ -83,11 +83,7 @@ impl OrderRepository {
     }
 
     /// Find all orders (admin, paginated).
-    pub async fn find_all(
-        &self,
-        skip: u64,
-        limit: i64,
-    ) -> Result<Vec<OrderModel>, String> {
+    pub async fn find_all(&self, skip: u64, limit: i64) -> Result<Vec<OrderModel>, String> {
         let cursor = self
             .collection
             .find(doc! {})
@@ -115,10 +111,7 @@ impl OrderRepository {
         status: &str,
     ) -> Result<Option<OrderModel>, String> {
         self.collection
-            .find_one_and_update(
-                doc! { "_id": id },
-                doc! { "$set": { "status": status } },
-            )
+            .find_one_and_update(doc! { "_id": id }, doc! { "$set": { "status": status } })
             .return_document(mongodb::options::ReturnDocument::After)
             .await
             .map_err(|e| e.to_string())
