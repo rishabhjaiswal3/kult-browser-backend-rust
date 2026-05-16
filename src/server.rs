@@ -200,7 +200,8 @@ async fn build_router(db: Database) -> Router {
         }
     });
 
-    api_router
+    Router::new()
+        .nest("/api", api_router)
         .merge(
             SwaggerUi::new("/docs")
                 .url("/openapi.json", crate::openapi::ApiDoc::openapi())

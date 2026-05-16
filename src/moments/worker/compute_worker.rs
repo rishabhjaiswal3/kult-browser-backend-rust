@@ -6,7 +6,9 @@ use std::time::Duration;
 use tokio::sync::watch;
 
 use crate::external::compute::ZgComputeClient;
-use crate::moments::da_events::{MomentDAEventModel, MomentDAEventRepository, EVENT_MOMENT_AI_PROCESSED};
+use crate::moments::da_events::{
+    MomentDAEventModel, MomentDAEventRepository, EVENT_MOMENT_AI_PROCESSED,
+};
 use crate::moments::repository::{AiAnalysisUpdate, MomentsRepository};
 
 const POLL_INTERVAL_SECS: u64 = 30;
@@ -91,7 +93,9 @@ impl ComputeWorker {
                         rarity: analysis.rarity.clone(),
                     };
 
-                    self.repo.update_ai_analysis(&moment.moment_id, &update).await?;
+                    self.repo
+                        .update_ai_analysis(&moment.moment_id, &update)
+                        .await?;
 
                     tracing::info!(
                         moment_id = %moment.moment_id,

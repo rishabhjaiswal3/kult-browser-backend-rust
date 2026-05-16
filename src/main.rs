@@ -95,7 +95,9 @@ async fn main() {
         worker_handles.push(handle);
         tracing::info!("DA event worker spawned as background task");
     } else {
-        tracing::warn!("DA event worker not started — set ZG_DA_DISPERSER_URL to enable real 0G DA");
+        tracing::warn!(
+            "DA event worker not started — set ZG_DA_DISPERSER_URL to enable real 0G DA"
+        );
     }
 
     // 0G Compute Worker — AI analysis of stored moments (optional, requires ZG_COMPUTE_* env vars)
@@ -103,8 +105,9 @@ async fn main() {
         if let Some(compute_client) = ZgComputeClient::from_config() {
             let compute_repo = MomentsRepository::new(&db);
             let compute_da_repo = MomentDAEventRepository::new(&db);
-            let compute_worker = ComputeWorker::new(compute_repo, compute_client, shutdown_rx.clone())
-                .with_da_events(compute_da_repo);
+            let compute_worker =
+                ComputeWorker::new(compute_repo, compute_client, shutdown_rx.clone())
+                    .with_da_events(compute_da_repo);
             let handle = tokio::spawn(async move {
                 compute_worker.run().await;
             });

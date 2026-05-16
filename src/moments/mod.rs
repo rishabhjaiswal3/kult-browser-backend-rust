@@ -12,15 +12,12 @@ pub mod worker;
 
 pub use controller::MomentsState;
 pub use da_events::{
-    MomentDAEventModel, MomentDAEventRepository,
-    EVENT_COMMENT_CREATED, EVENT_MOMENT_AI_PROCESSED,
-    EVENT_MOMENT_COMMENTED, EVENT_MOMENT_CREATED,
-    EVENT_MOMENT_LIKED, EVENT_MOMENT_SHARED,
+    MomentDAEventModel, MomentDAEventRepository, EVENT_COMMENT_CREATED, EVENT_MOMENT_AI_PROCESSED,
+    EVENT_MOMENT_COMMENTED, EVENT_MOMENT_CREATED, EVENT_MOMENT_LIKED, EVENT_MOMENT_SHARED,
 };
 pub use repository::MomentsRepository;
 pub use route::routes;
 pub use service::MomentsService;
 pub use worker::{
-    ComputeWorker, DAEventWorker, MigrationJob, MigrationWorker, DEAD_LETTER_QUEUE,
-    MIGRATION_QUEUE,
+    ComputeWorker, DAEventWorker, MigrationJob, MigrationWorker, DEAD_LETTER_QUEUE, MIGRATION_QUEUE,
 };

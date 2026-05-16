@@ -225,10 +225,7 @@ impl ListingService {
     /// Map model → public DTO (no timestamps).
     pub fn to_response(listing: ListingModel) -> ListingResponse {
         ListingResponse {
-            id: listing
-                .id
-                .map(|oid| oid.to_hex())
-                .unwrap_or_default(),
+            id: listing.id.map(|oid| oid.to_hex()).unwrap_or_default(),
             name: listing.name,
             short_description: listing.short_description,
             long_description: listing.long_description,

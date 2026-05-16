@@ -24,6 +24,8 @@ pub struct GameListItemDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<Object>)]
     pub metadata: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub knowledge_facts: Option<Vec<String>>,
 }
 
 /// DTO for single game detail view (includes url and more fields)
@@ -46,6 +48,8 @@ pub struct GameDetailDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<Object>)]
     pub metadata: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub knowledge_facts: Option<Vec<String>>,
 }
 
 /// Paginated response for all games list

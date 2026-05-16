@@ -95,7 +95,10 @@ async fn sync_warzone_entitlement(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("Warzone sync failed status={} body={}", status, body));
+        return Err(format!(
+            "Warzone sync failed status={} body={}",
+            status, body
+        ));
     }
 
     Ok(())

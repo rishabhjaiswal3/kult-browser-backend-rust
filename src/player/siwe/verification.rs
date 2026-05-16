@@ -4,8 +4,8 @@ use std::str::FromStr;
 /// Recover the Ethereum address that produced `signature` over `message`.
 /// Applies the EIP-191 personal_sign prefix (same as MetaMask `personal_sign`).
 pub fn recover_signer(message: &str, signature_hex: &str) -> Result<String, String> {
-    let sig = Signature::from_str(signature_hex)
-        .map_err(|e| format!("Invalid signature format: {e}"))?;
+    let sig =
+        Signature::from_str(signature_hex).map_err(|e| format!("Invalid signature format: {e}"))?;
 
     let recovered = sig
         .recover_address_from_msg(message.as_bytes())

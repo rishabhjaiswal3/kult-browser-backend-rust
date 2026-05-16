@@ -10,7 +10,9 @@ use tokio::time::timeout;
 
 use crate::external::spaces;
 use crate::external::storage;
-use crate::moments::da_events::{MomentDAEventModel, MomentDAEventRepository, EVENT_ASSET_MIGRATED};
+use crate::moments::da_events::{
+    MomentDAEventModel, MomentDAEventRepository, EVENT_ASSET_MIGRATED,
+};
 use crate::moments::model::MomentModel;
 use crate::moments::repository::MomentsRepository;
 use crate::onchain::{metadata_hash, ActivityType, OnchainActivityService, RecordActivityInput};

@@ -11,9 +11,9 @@ use crate::marketplace::orders::dto::{
 };
 use crate::marketplace::orders::model::OrderModel;
 use crate::marketplace::orders::repository::OrderRepository;
-use crate::player::repository::PlayerRepository;
-use crate::marketplace::repository::ListingRepository;
 use crate::marketplace::orders::service::game_backend_sync::sync_external_game_entitlement;
+use crate::marketplace::repository::ListingRepository;
+use crate::player::repository::PlayerRepository;
 
 #[derive(Clone)]
 pub struct OrderService {
@@ -46,7 +46,9 @@ impl OrderService {
             .map_err(|_| AppError::BadRequest("Invalid listingId format".to_string()))?;
 
         if request.quantity == 0 {
-            return Err(AppError::BadRequest("Quantity must be at least 1".to_string()));
+            return Err(AppError::BadRequest(
+                "Quantity must be at least 1".to_string(),
+            ));
         }
         let payment_token = request.payment_token.trim().to_string();
         if payment_token.is_empty() {
@@ -88,7 +90,9 @@ impl OrderService {
         let chain_id = env::var("MARKETPLACE_CHAIN_ID")
             .unwrap_or_else(|_| "8453".to_string())
             .parse::<u64>()
-            .map_err(|_| AppError::Internal("MARKETPLACE_CHAIN_ID must be a valid u64".to_string()))?;
+            .map_err(|_| {
+                AppError::Internal("MARKETPLACE_CHAIN_ID must be a valid u64".to_string())
+            })?;
         let contract_address = env::var("MARKETPLACE_CONTRACT_ADDRESS")
             .or_else(|_| env::var("VITE_MARKETPLACE_CONTRACT_ADDRESS"))
             .unwrap_or_default();
@@ -168,7 +172,9 @@ impl OrderService {
             .map_err(|_| AppError::BadRequest("Invalid listingId format".to_string()))?;
 
         if request.quantity == 0 {
-            return Err(AppError::BadRequest("Quantity must be at least 1".to_string()));
+            return Err(AppError::BadRequest(
+                "Quantity must be at least 1".to_string(),
+            ));
         }
 
         // Fetch listing and validate

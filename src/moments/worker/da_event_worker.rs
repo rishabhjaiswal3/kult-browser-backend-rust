@@ -143,7 +143,9 @@ impl DAEventWorker {
                     );
                     self.repo.mark_failed(&event_id, &e).await?;
                 }
-                Ok(DaBlobStatus::Processing) | Ok(DaBlobStatus::Confirmed) | Ok(DaBlobStatus::Unknown) => {
+                Ok(DaBlobStatus::Processing)
+                | Ok(DaBlobStatus::Confirmed)
+                | Ok(DaBlobStatus::Unknown) => {
                     // Still in flight — check next cycle
                 }
                 Err(e) => {

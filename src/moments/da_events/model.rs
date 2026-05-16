@@ -13,10 +13,10 @@ pub const EVENT_ASSET_MIGRATED: &str = "moment.asset_migrated";
 pub const EVENT_COMMENT_CREATED: &str = "comment.created";
 
 // DA status constants — lifecycle of a blob through the 0G DA pipeline
-pub const DA_STATUS_PENDING: &str = "pending";       // Created, not yet submitted
+pub const DA_STATUS_PENDING: &str = "pending"; // Created, not yet submitted
 pub const DA_STATUS_DISPERSING: &str = "dispersing"; // Submitted to disperser, awaiting finalization
-pub const DA_STATUS_FINALIZED: &str = "finalized";   // Finalized with full DA receipt
-pub const DA_STATUS_FAILED: &str = "failed";         // Permanently failed
+pub const DA_STATUS_FINALIZED: &str = "finalized"; // Finalized with full DA receipt
+pub const DA_STATUS_FAILED: &str = "failed"; // Permanently failed
 
 /// DA event record — a verifiable event blob stored on 0G DA.
 /// Collection: `momentDaEvents`

@@ -149,7 +149,9 @@ impl ZgDaClient {
         match status_int {
             1 => Ok(DaBlobStatus::Processing),
             2 => Ok(DaBlobStatus::Confirmed),
-            3 => Ok(DaBlobStatus::Finalized(self.extract_receipt(&raw, request_id))),
+            3 => Ok(DaBlobStatus::Finalized(
+                self.extract_receipt(&raw, request_id),
+            )),
             4 => {
                 let err = raw
                     .get("error")
@@ -181,10 +183,8 @@ impl ZgDaClient {
             .and_then(|v| v.as_u64())
             .map(|v| v as u32);
 
-        let metadata = proof.and_then(|p| {
-            p.get("batch_metadata")
-                .or_else(|| p.get("batchMetadata"))
-        });
+        let metadata =
+            proof.and_then(|p| p.get("batch_metadata").or_else(|| p.get("batchMetadata")));
 
         // Prefer batch_header_hash, fall back to batch_root inside batch_header
         let batch_header_hash = metadata
@@ -196,14 +196,8 @@ impl ZgDaClient {
             .map(String::from)
             .or_else(|| {
                 metadata
-                    .and_then(|m| {
-                        m.get("batch_header")
-                            .or_else(|| m.get("batchHeader"))
-                    })
-                    .and_then(|h| {
-                        h.get("batch_root")
-                            .or_else(|| h.get("batchRoot"))
-                    })
+                    .and_then(|m| m.get("batch_header").or_else(|| m.get("batchHeader")))
+                    .and_then(|h| h.get("batch_root").or_else(|| h.get("batchRoot")))
                     .and_then(|v| v.as_str())
                     .map(String::from)
             });
