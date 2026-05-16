@@ -200,6 +200,10 @@ async fn build_router(db: Database) -> Router {
         }
     });
 
+    tracing::info!(
+        "HTTP routes mounted under /api (e.g. /api/health, /api/games/all); docs at /docs"
+    );
+
     Router::new()
         .nest("/api", api_router)
         .merge(
@@ -211,6 +215,89 @@ async fn build_router(db: Database) -> Router {
         .layer(governor_layer)
         .layer(trace_layer)
         .layer(cors)
+}
+
+#[cfg(test)]
+mod route_tests {
+    use super::{fallback, health_check};
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        routing::get,
+        Json, Router,
+    };
+    use serde_json::json;
+    use tower::ServiceExt;
+
+    /// Mirrors production routing: handlers under `/api`, clients call `/api/...`.
+    fn sample_app() -> Router {
+        let api_router = Router::new()
+            .route("/health", get(health_check))
+            .nest(
+                "/games",
+                Router::new().route(
+                    "/all",
+                    get(|| async {
+                        Json(json!({
+                            "ok": true,
+                            "data": { "games": [] }
+                        }))
+                    }),
+                ),
+            );
+
+        Router::new()
+            .nest("/api", api_router)
+            .fallback(fallback)
+    }
+
+    #[tokio::test]
+    async fn api_health_route_matches() {
+        let app = sample_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn api_games_all_route_matches() {
+        let app = sample_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/games/all?page=1&page_size=10")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn games_all_without_api_prefix_returns_not_found() {
+        let app = sample_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/games/all")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
 }
 
 /// Start the HTTP server
